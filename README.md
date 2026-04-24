@@ -7,7 +7,7 @@ Portable toolkit for finding IT profiles on LinkedIn via X-Ray search without us
 - builds X-Ray queries for LinkedIn profile search;
 - sends those queries through a search provider;
 - saves results to CSV;
-- supports batch search across multiple titles, skills, and locations;
+- supports batch search across multiple titles, skill groups, locations, and profile sites;
 - keeps secrets local via `.env`.
 
 ## Current Search Providers
@@ -61,6 +61,28 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python.exe .\src\google_xray_to_csv.py --title "python developer" --skill django --location germany --output .\output\linkedin_profiles.csv
 ```
 
+## Phase 1 Web App
+
+Run the local MVP interface:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\START_PHASE1_APP.cmd
+```
+
+Then open:
+
+```text
+http://127.0.0.1:5000
+```
+
+Phase 1 includes:
+
+- Search Builder
+- Candidate Results table
+- AI Candidate Profile side panel
+- saved local search runs
+
 ## Batch Search
 
 You can pass repeated flags:
@@ -69,8 +91,8 @@ You can pass repeated flags:
 .\.venv\Scripts\python.exe .\src\google_xray_to_csv.py `
   --title "python developer" `
   --title "backend developer" `
-  --skill django `
-  --skill fastapi `
+  --skill "python | django | postgresql" `
+  --skill "python | fastapi | aws" `
   --location germany `
   --location poland `
   --output .\output\batch_profiles.csv
@@ -96,19 +118,33 @@ Or just run one of the helper launchers:
 run_batch_search.cmd
 ```
 
-The script deduplicates results by profile URL and writes helpful columns like:
+By default the launcher currently searches:
 
-- `query`
-- `title_input`
-- `skill_input`
-- `location_input`
-- `name`
-- `headline`
-- `title`
-- `link`
-- `snippet`
-- `display_link`
-- `source`
+- LinkedIn
+- Facebook
+
+The script deduplicates results by profile URL and writes recruiter-friendly columns like:
+
+- `Source Site`
+- `Candidate Name`
+- `Profile URL`
+- `Role`
+- `Technology`
+- `Location`
+- `Short Description`
+
+## Skill Group Format
+
+Each line in `examples/skills.txt` is treated as one full required skill set.
+
+Example:
+
+```text
+java | javascript | oracle
+python | django | postgresql
+```
+
+That means the query is built with all listed technologies together, not one by one.
 
 ## Why Not Google Custom Search JSON API
 
@@ -127,6 +163,24 @@ SEARCH_RESULTS_PER_QUERY=10
 SERPAPI_API_KEY=your_serpapi_key
 BRAVE_SEARCH_API_KEY=
 ```
+
+## Indexed Profile Data We Can Capture
+
+From the search result itself, we can usually capture:
+
+- search query inputs that found the profile;
+- profile name inferred from result title;
+- profile headline inferred from result title;
+- LinkedIn profile URL and slug;
+- LinkedIn regional subdomain such as `de`, `uk`, or `www`;
+- result rank in search;
+- result snippet text;
+- displayed link;
+- provider-specific source/date fields;
+- redirect, cached, related-pages, favicon, and thumbnail links when available;
+- rich snippet, sitelinks, and extensions when provided by the search provider.
+
+This is indexed search-result metadata, not full LinkedIn profile scraping.
 
 ## Move To Another Computer
 

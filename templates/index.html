@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Developer Search AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Search Intelligence</p>
+          <h1>Developer Search AI</h1>
+        </div>
+        <div class="topbar-meta">
+          <span id="summary-pill">Phase 1 MVP</span>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="panel builder-panel">
+          <div class="panel-header">
+            <h2>Search Builder</h2>
+            <p>Build and run a sourcing search.</p>
+          </div>
+
+          <form id="search-form" class="builder-form">
+            <label>
+              Role
+              <input name="role" placeholder="Senior Java Developer">
+            </label>
+
+            <label>
+              Role Variants
+              <textarea name="titles" rows="3" placeholder="Senior Java Developer&#10;Backend Engineer"></textarea>
+            </label>
+
+            <label>
+              Tech Stacks
+              <textarea name="tech_groups" rows="4" placeholder="Java | Spring Boot | Kafka | AWS&#10;Java | Spring | Oracle"></textarea>
+            </label>
+
+            <label>
+              Locations
+              <textarea name="locations" rows="3" placeholder="Ukraine&#10;Poland&#10;Remote"></textarea>
+            </label>
+
+            <div class="two-col">
+              <label>
+                Experience
+                <select name="experience">
+                  <option value="">Any</option>
+                  <option>3–5 years</option>
+                  <option>5–8 years</option>
+                  <option>8+ years</option>
+                </select>
+              </label>
+
+              <label>
+                Availability
+                <select name="availability">
+                  <option value="">Unknown</option>
+                  <option>Open to work</option>
+                  <option>Recently active</option>
+                  <option>Currently employed</option>
+                  <option>Freelance</option>
+                </select>
+              </label>
+            </div>
+
+            <fieldset class="source-group">
+              <legend>Search Sources</legend>
+              <label><input type="checkbox" name="sources" value="linkedin" checked> LinkedIn</label>
+              <label><input type="checkbox" name="sources" value="facebook" checked> Facebook</label>
+              <label><input type="checkbox" name="sources" value="github"> GitHub</label>
+              <label><input type="checkbox" name="sources" value="stackoverflow"> Stack Overflow</label>
+              <label><input type="checkbox" name="sources" value="wellfound"> Wellfound</label>
+              <label><input type="checkbox" name="sources" value="devpost"> Devpost</label>
+            </fieldset>
+
+            <button type="submit" class="primary-btn" id="search-button">Generate Search Queries</button>
+          </form>
+
+          <div class="saved-searches">
+            <div class="panel-subheader">
+              <h3>Recent Searches</h3>
+            </div>
+            <div id="search-history" class="history-list"></div>
+          </div>
+        </section>
+
+        <section class="panel results-panel">
+          <div class="panel-header">
+            <h2>Candidate Results</h2>
+            <p id="results-meta">Run a search to see candidates.</p>
+          </div>
+
+          <div id="results-state" class="empty-state">
+            Search results will appear here.
+          </div>
+
+          <div id="results-table-wrapper" class="results-table-wrapper hidden">
+            <table class="results-table">
+              <thead>
+                <tr>
+                  <th>Score</th>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Location</th>
+                  <th>Stack</th>
+                  <th>Source</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="results-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="panel profile-panel">
+          <div class="panel-header">
+            <h2>AI Candidate Profile</h2>
+            <p>Pick a candidate to inspect.</p>
+          </div>
+
+          <div id="candidate-details" class="details-empty">
+            No candidate selected.
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+  </html>

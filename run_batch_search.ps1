@@ -17,9 +17,10 @@ if (-not (Test-Path $pythonExe)) {
 }
 
 & $pythonExe $scriptPath `
+    --source-site linkedin `
+    --source-site facebook `
     --titles-file $titlesFile `
     --skills-file $skillsFile `
     --locations-file $locationsFile `
     --num $Num `
     --output $Output
-

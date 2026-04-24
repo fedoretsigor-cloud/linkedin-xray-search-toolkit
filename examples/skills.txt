@@ -1,6 +1,4 @@
-django
-fastapi
-python
-postgresql
-aws
-
+python | django | postgresql
+python | fastapi | aws
+java | javascript | oracle
+java | spring | oracle

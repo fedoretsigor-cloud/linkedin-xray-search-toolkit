@@ -14,9 +14,10 @@ if not exist "%PYTHON_EXE%" (
 )
 
 "%PYTHON_EXE%" "%SCRIPT_PATH%" ^
+  --source-site linkedin ^
+  --source-site facebook ^
   --titles-file "%TITLES_FILE%" ^
   --skills-file "%SKILLS_FILE%" ^
   --locations-file "%LOCATIONS_FILE%" ^
   --num 10 ^
   --output "%PROJECT_ROOT%output\batch_profiles.csv"
-

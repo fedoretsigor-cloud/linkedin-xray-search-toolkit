@@ -11,8 +11,8 @@ def build_or_group(values):
     return f"({joined})"
 
 
-def build_query(titles, skills, locations, extras):
-    parts = ["site:linkedin.com/in/"]
+def build_query(titles, skills, locations, extras, site_filter="site:linkedin.com/in/"):
+    parts = [site_filter]
 
     title_group = build_or_group(titles)
     skill_group = build_or_group(skills)
@@ -43,6 +43,11 @@ def parse_args():
         action="store_true",
         help="Add common IT title synonyms automatically",
     )
+    parser.add_argument(
+        "--site-filter",
+        default="site:linkedin.com/in/",
+        help="Search filter prefix, for example site:linkedin.com/in/",
+    )
     return parser.parse_args()
 
 
@@ -61,6 +66,7 @@ def main():
         skills=args.skill,
         locations=args.location,
         extras=args.extra,
+        site_filter=args.site_filter,
     )
     print(query)
 
