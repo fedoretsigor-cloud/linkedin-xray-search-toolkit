@@ -22,6 +22,8 @@ Portable toolkit for finding IT profiles on LinkedIn via X-Ray search without us
 - `examples/titles.txt` - sample titles list
 - `examples/skills.txt` - sample skills list
 - `examples/locations.txt` - sample locations list
+- `run_batch_search.ps1` - quick batch launcher for PowerShell
+- `run_batch_search.cmd` - quick batch launcher for Command Prompt
 - `.env.example` - config template
 - `requirements.txt` - Python dependencies
 
@@ -82,6 +84,16 @@ You can also use text files:
   --skills-file .\examples\skills.txt `
   --locations-file .\examples\locations.txt `
   --output .\output\batch_profiles.csv
+```
+
+Or just run one of the helper launchers:
+
+```powershell
+.\run_batch_search.ps1
+```
+
+```cmd
+run_batch_search.cmd
 ```
 
 The script deduplicates results by profile URL and writes helpful columns like:
