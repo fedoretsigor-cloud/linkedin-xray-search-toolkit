@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: linkedin-xray-search-toolkit
+    name: engineer-search-ai
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
