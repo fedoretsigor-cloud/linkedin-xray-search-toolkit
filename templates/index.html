@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Developer Search AI</title>
+    <title>Engineer Search AI</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   </head>
   <body>
@@ -11,7 +11,8 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">Search Intelligence</p>
-          <h1>Developer Search AI</h1>
+          <h1>Engineer Search AI</h1>
+          <p class="hero-subtitle">A sourcing workspace for building engineer search queries, discovering profiles across public sources, and reviewing candidates faster.</p>
         </div>
         <div class="topbar-meta">
           <span id="summary-pill">Phase 1 MVP</span>
@@ -30,22 +31,46 @@
 
           <form id="search-form" class="builder-form">
             <label>
-              Role
+              <span class="label-row">
+                <span>Role</span>
+                <span class="hint-badge">
+                  Step 1
+                  <span class="hint-tooltip">Start with the main engineer role you want to search for.</span>
+                </span>
+              </span>
               <input name="role" placeholder="Senior Java Developer">
             </label>
 
             <label>
-              Role Variants
+              <span class="label-row">
+                <span>Role Variants</span>
+                <span class="hint-badge">
+                  Step 2
+                  <span class="hint-tooltip">Add close title variations to widen recall without changing the target role too much.</span>
+                </span>
+              </span>
               <textarea name="titles" rows="3" placeholder="Senior Java Developer&#10;Backend Engineer"></textarea>
             </label>
 
             <label>
-              Tech Stacks
+              <span class="label-row">
+                <span>Tech Stacks</span>
+                <span class="hint-badge">
+                  Step 3
+                  <span class="hint-tooltip">Define the required technologies. Use one stack per line.</span>
+                </span>
+              </span>
               <textarea name="tech_groups" rows="4" placeholder="Java | Spring Boot | Kafka | AWS&#10;Java | Spring | Oracle"></textarea>
             </label>
 
             <label>
-              Locations
+              <span class="label-row">
+                <span>Locations</span>
+                <span class="hint-badge">
+                  Step 4
+                  <span class="hint-tooltip">List the target markets or remote options where you want to discover candidates.</span>
+                </span>
+              </span>
               <textarea name="locations" rows="3" placeholder="Ukraine&#10;Poland&#10;Remote"></textarea>
             </label>
 
@@ -81,7 +106,15 @@
             </label>
 
             <fieldset class="source-group">
-              <legend>Search Sources</legend>
+              <legend>
+                <span class="label-row">
+                  <span>Search Sources</span>
+                  <span class="hint-badge">
+                    Step 5
+                    <span class="hint-tooltip">Choose the public platforms where the app should look for engineer profiles.</span>
+                  </span>
+                </span>
+              </legend>
               <div class="source-options">
                 <label class="source-option">
                   <input type="checkbox" name="sources" value="linkedin" checked>
