@@ -73,7 +73,7 @@ function selectCandidate(candidateId) {
 function renderResults(run) {
   state.run = run;
   const meta = document.getElementById("results-meta");
-  meta.textContent = `${run.candidates.length} candidates • ${run.queries_count} queries • ${run.duration_seconds}s`;
+  meta.textContent = `${run.candidates.length} candidates â€¢ ${run.queries_count} queries â€¢ ${run.duration_seconds}s`;
 
   const empty = document.getElementById("results-state");
   const wrapper = document.getElementById("results-table-wrapper");
@@ -124,7 +124,7 @@ function renderHistory(items) {
     node.className = "history-item";
     node.innerHTML = `
       <strong>${item.role || "Untitled search"}</strong>
-      <span>${item.candidate_count} candidates • ${item.strong_matches} strong</span>
+      <span>${item.candidate_count} candidates â€¢ ${item.strong_matches} strong</span>
     `;
     node.addEventListener("click", async () => {
       const response = await fetch(`/api/searches/${item.id}`);
@@ -174,7 +174,7 @@ async function handleSearch(event) {
     alert(error.message);
   } finally {
     button.disabled = false;
-    button.textContent = "Generate Search Queries";
+    button.textContent = "Run Search";
   }
 }
 

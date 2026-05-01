@@ -63,6 +63,20 @@ h1, h2, h3, h4, p { margin-top: 0; }
 }
 
 .panel-header p { color: var(--muted); margin-bottom: 0; }
+.panel-header-action {
+  display: block;
+}
+.header-search-btn {
+  display: inline-flex;
+  width: auto;
+  min-width: 140px;
+  margin: 6px 0 10px;
+  padding: 10px 16px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
+}
 .builder-form label,
 .source-group { display: block; margin-bottom: 14px; }
 .builder-form input,
@@ -192,4 +206,15 @@ a { color: #7fd9ff; }
 
 @media (max-width: 1200px) {
   .workspace { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  .panel-header-action {
+    display: block;
+  }
+
+  .header-search-btn {
+    width: 100%;
+    justify-content: center;
+  }
 }

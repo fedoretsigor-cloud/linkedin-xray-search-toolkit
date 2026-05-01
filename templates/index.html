@@ -20,9 +20,12 @@
 
       <main class="workspace">
         <section class="panel builder-panel">
-          <div class="panel-header">
-            <h2>Search Builder</h2>
-            <p>Build and run a sourcing search.</p>
+          <div class="panel-header panel-header-action">
+            <div>
+              <h2>Search Builder</h2>
+              <button type="submit" form="search-form" class="primary-btn header-search-btn" id="search-button">Run Search</button>
+              <p>Build and run a sourcing search.</p>
+            </div>
           </div>
 
           <form id="search-form" class="builder-form">
@@ -51,8 +54,8 @@
                 Experience
                 <select name="experience">
                   <option value="">Any</option>
-                  <option>3–5 years</option>
-                  <option>5–8 years</option>
+                  <option>3-5 years</option>
+                  <option>5-8 years</option>
                   <option>8+ years</option>
                 </select>
               </label>
@@ -98,8 +101,6 @@
                 </label>
               </div>
             </fieldset>
-
-            <button type="submit" class="primary-btn" id="search-button">Generate Search Queries</button>
           </form>
 
           <div class="saved-searches">
@@ -153,4 +154,4 @@
 
     <script src="{{ url_for('static', filename='app.js') }}"></script>
   </body>
-  </html>
+</html>
