@@ -5,8 +5,10 @@ import re
 import time
 from pathlib import Path
 from urllib.parse import urlparse
+import platform
 
-import certifi_win32  # noqa: F401
+if platform.system() == "Windows":
+    import certifi_win32  # noqa: F401
 import requests
 from dotenv import load_dotenv
 
