@@ -73,7 +73,7 @@ function selectCandidate(candidateId) {
 function renderResults(run) {
   state.run = run;
   const meta = document.getElementById("results-meta");
-  meta.textContent = `${run.candidates.length} candidates â€¢ ${run.queries_count} queries â€¢ ${run.duration_seconds}s`;
+  meta.textContent = `${run.candidates.length} candidates · ${run.queries_count} queries · ${run.duration_seconds}s`;
 
   const empty = document.getElementById("results-state");
   const wrapper = document.getElementById("results-table-wrapper");
@@ -124,7 +124,7 @@ function renderHistory(items) {
     node.className = "history-item";
     node.innerHTML = `
       <strong>${item.role || "Untitled search"}</strong>
-      <span>${item.candidate_count} candidates â€¢ ${item.strong_matches} strong</span>
+      <span>${item.candidate_count} candidates · ${item.strong_matches} strong</span>
     `;
     node.addEventListener("click", async () => {
       const response = await fetch(`/api/searches/${item.id}`);
@@ -155,6 +155,7 @@ async function handleSearch(event) {
     locations: lines(form.locations.value),
     experience: form.experience.value,
     availability: form.availability.value,
+    num: Number(form.num.value),
     sources: Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value),
   };
 

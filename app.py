@@ -13,6 +13,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 RUNS_DIR = DATA_DIR / "runs"
 INDEX_FILE = DATA_DIR / "search_runs.json"
+DEFAULT_SEARCH_RESULTS = int(os.getenv("SEARCH_RESULTS_PER_QUERY", "20"))
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -191,6 +192,12 @@ def get_search(run_id):
 @app.post("/api/search")
 def create_search():
     payload = request.get_json(force=True)
+    requested_num = payload.get("num", DEFAULT_SEARCH_RESULTS)
+    try:
+        requested_num = int(requested_num)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Search results limit must be a number"}), 400
+
     search = {
         "role": clean_text(payload.get("role", "")),
         "titles": [clean_text(value) for value in payload.get("titles", []) if clean_text(value)],
@@ -199,6 +206,7 @@ def create_search():
         "sources": payload.get("sources", ["linkedin"]),
         "experience": clean_text(payload.get("experience", "")),
         "availability": clean_text(payload.get("availability", "")),
+        "results_limit": requested_num,
     }
 
     if not search["titles"] and search["role"]:
@@ -212,7 +220,7 @@ def create_search():
         "locations": search["locations"] or [""],
         "extras": [search["availability"]] if search["availability"] else [],
         "source_sites": search["sources"] or ["linkedin"],
-        "num": 10,
+        "num": requested_num,
         "provider": None,
     }
 
