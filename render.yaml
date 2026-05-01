@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: linkedin-xray-search-toolkit
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    plan: free
+    envVars:
+      - key: SEARCH_PROVIDER
+        value: tavily
+      - key: SEARCH_RESULTS_PER_QUERY
+        value: 10
+      - key: TAVILY_API_KEY
+        sync: false

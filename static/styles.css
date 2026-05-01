@@ -86,12 +86,25 @@ h1, h2, h3, h4, p { margin-top: 0; }
   border-radius: 14px;
   padding: 12px;
 }
-.source-group label {
-  display: flex;
-  gap: 8px;
+.source-options {
+  display: grid;
+  gap: 10px;
+}
+.source-option {
+  display: grid;
+  grid-template-columns: 18px 1fr;
   align-items: center;
+  gap: 10px;
   color: var(--muted);
-  margin-bottom: 8px;
+  margin-bottom: 0;
+}
+.source-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.source-option span {
+  line-height: 1.35;
 }
 .primary-btn {
   width: 100%;

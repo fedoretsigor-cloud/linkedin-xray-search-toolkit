@@ -1,3 +1,4 @@
+import os
 import json
 import uuid
 from datetime import datetime, timezone
@@ -232,4 +233,7 @@ def create_search():
 
 if __name__ == "__main__":
     ensure_storage()
-    app.run(debug=True, host="127.0.0.1", port=5000)
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "5000"))
+    debug = os.getenv("FLASK_DEBUG", "0").lower() in {"1", "true", "yes"}
+    app.run(debug=debug, host=host, port=port)

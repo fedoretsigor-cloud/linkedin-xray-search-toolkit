@@ -71,12 +71,32 @@
 
             <fieldset class="source-group">
               <legend>Search Sources</legend>
-              <label><input type="checkbox" name="sources" value="linkedin" checked> LinkedIn</label>
-              <label><input type="checkbox" name="sources" value="facebook" checked> Facebook</label>
-              <label><input type="checkbox" name="sources" value="github"> GitHub</label>
-              <label><input type="checkbox" name="sources" value="stackoverflow"> Stack Overflow</label>
-              <label><input type="checkbox" name="sources" value="wellfound"> Wellfound</label>
-              <label><input type="checkbox" name="sources" value="devpost"> Devpost</label>
+              <div class="source-options">
+                <label class="source-option">
+                  <input type="checkbox" name="sources" value="linkedin" checked>
+                  <span>LinkedIn</span>
+                </label>
+                <label class="source-option">
+                  <input type="checkbox" name="sources" value="facebook">
+                  <span>Facebook</span>
+                </label>
+                <label class="source-option">
+                  <input type="checkbox" name="sources" value="github">
+                  <span>GitHub</span>
+                </label>
+                <label class="source-option">
+                  <input type="checkbox" name="sources" value="stackoverflow">
+                  <span>Stack Overflow</span>
+                </label>
+                <label class="source-option">
+                  <input type="checkbox" name="sources" value="wellfound">
+                  <span>Wellfound</span>
+                </label>
+                <label class="source-option">
+                  <input type="checkbox" name="sources" value="devpost">
+                  <span>Devpost</span>
+                </label>
+              </div>
             </fieldset>
 
             <button type="submit" class="primary-btn" id="search-button">Generate Search Queries</button>

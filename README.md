@@ -14,6 +14,37 @@ Portable toolkit for finding IT profiles on LinkedIn via X-Ray search without us
 
 - `SerpApi` - recommended for Google-style X-Ray search
 - `Brave Search API` - optional alternative
+- `Tavily` - practical alternative with free monthly credits
+
+## Make It Public
+
+The easiest way to make the app available from any computer is Render.
+
+This repo now includes `render.yaml`, so deployment is simple:
+
+1. Push your latest code to GitHub.
+2. Create an account at [Render](https://render.com/).
+3. In Render, choose `New` -> `Blueprint`.
+4. Connect this GitHub repository.
+5. Render will detect `render.yaml`.
+6. In environment variables, set:
+   - `TAVILY_API_KEY`
+7. Deploy.
+
+Render will build with:
+
+- `pip install -r requirements.txt`
+
+and start with:
+
+- `gunicorn app:app`
+
+After deploy, Render gives you a public `onrender.com` URL.
+
+Note:
+
+- local `data/` storage is ephemeral on Render, so saved runs may disappear after redeploy/restart
+- for persistent history later, move search history to a database
 
 ## Project Structure
 
@@ -47,7 +78,7 @@ python -m venv .venv
 Copy-Item .env.example .env
 ```
 
-4. Add your `SERPAPI_API_KEY` to `.env`.
+4. Add your provider key to `.env`.
 
 5. Generate a simple X-Ray query:
 
@@ -164,6 +195,16 @@ SERPAPI_API_KEY=your_serpapi_key
 BRAVE_SEARCH_API_KEY=
 ```
 
+Example `.env` for Tavily:
+
+```dotenv
+SEARCH_PROVIDER=tavily
+SEARCH_RESULTS_PER_QUERY=10
+SERPAPI_API_KEY=
+BRAVE_SEARCH_API_KEY=
+TAVILY_API_KEY=your_tavily_api_key
+```
+
 ## Indexed Profile Data We Can Capture
 
 From the search result itself, we can usually capture:
@@ -214,4 +255,5 @@ Copy-Item .env.example .env
 - [SerpApi](https://serpapi.com/)
 - [SerpApi Google Search API](https://serpapi.com/search-api)
 - [Brave Search API](https://brave.com/search/api/)
+- [Tavily Search API](https://docs.tavily.com/api-reference/endpoint/search)
 - [Google API keys docs](https://cloud.google.com/docs/authentication/api-keys)
