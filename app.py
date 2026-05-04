@@ -1,4 +1,4 @@
-import os
+﻿import os
 import json
 import uuid
 from datetime import datetime, timezone
@@ -153,6 +153,17 @@ def build_outreach(candidate, search):
     )
 
 
+def contains_cyrillic(values):
+    import re
+
+    pattern = re.compile(r"[Ð-Ð¯Ð°-ÑÐÑ‘Ð†Ñ–Ð‡Ñ—Ð„Ñ”]")
+    for value in values:
+        if value and pattern.search(str(value)):
+            return True
+    return False
+
+
+
 def transform_candidates(rows, search):
     candidates = []
     for index, row in enumerate(rows, start=1):
@@ -240,7 +251,7 @@ def login_submit():
             access_configured=True,
         ), 401
 
-    session.permanent = True
+    session.permanent = False
     session["is_authenticated"] = True
     safe_next = next_path if next_path.startswith("/") else "/"
     return redirect(safe_next)
@@ -291,8 +302,21 @@ def create_search():
         "results_limit": requested_num,
     }
 
+    validation_values = [
+        search["role"],
+        *search["titles"],
+        *search["tech_groups"],
+        *search["locations"],
+        search["experience"],
+        search["availability"],
+    ]
+
+    if contains_cyrillic(validation_values):
+        return jsonify({"error": "Please use English only."}), 400
+
     if not search["titles"] and search["role"]:
         search["titles"] = [search["role"]]
+
     if not search["titles"]:
         return jsonify({"error": "At least one role/title is required"}), 400
 
@@ -327,3 +351,4 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "0").lower() in {"1", "true", "yes"}
     app.run(debug=debug, host=host, port=port)
+

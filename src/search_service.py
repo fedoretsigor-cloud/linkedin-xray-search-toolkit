@@ -290,6 +290,48 @@ def normalize_tavily_items(query, payload):
     return normalized
 
 
+def tavily_query_count_for_target_count(target_count):
+    try:
+        target_count = int(target_count)
+    except (TypeError, ValueError):
+        target_count = 20
+
+    if target_count <= 20:
+        return 1
+    if target_count <= 40:
+        return 2
+    if target_count <= 60:
+        return 3
+    if target_count <= 100:
+        return 5
+    return 10
+
+
+def build_tavily_query_variants(query, target_count):
+    normalized_query = clean_text(query)
+    variants = [normalized_query]
+    boosters = [
+        '"profile"',
+        '"resume"',
+        '"cv"',
+        '"open to work"',
+        '"engineer"',
+        '"developer"',
+        '"software engineer"',
+        '"backend"',
+        '"frontend"',
+        '"remote"',
+        '"candidate"',
+        '"talent"',
+    ]
+    needed_queries = tavily_query_count_for_target_count(target_count)
+    for booster in boosters:
+        if len(variants) >= needed_queries:
+            break
+        variants.append(f"{normalized_query} {booster}".strip())
+    return variants[:needed_queries]
+
+
 def is_facebook_open_to_work_row(row):
     if row.get("source_site", "") != "facebook":
         return True
@@ -351,33 +393,51 @@ def print_console_progress(current, total, query_info, started_at):
 def run_search(search_input, progress_callback=None, config=None):
     cfg = config or load_config()
     provider = search_input.get("provider") or cfg["provider"]
-    result_count = search_input.get("num") or cfg["default_num"]
-    if not 1 <= result_count <= 20:
-        raise RuntimeError("num must be between 1 and 20")
+    requested_count = search_input.get("num") or cfg["default_num"]
+    try:
+        requested_count = int(requested_count)
+    except (TypeError, ValueError):
+        raise RuntimeError("num must be a number")
+    if requested_count < 1:
+        raise RuntimeError("num must be at least 1")
 
-    queries = build_queries(search_input)
+    if provider != "tavily" and requested_count > 20:
+        raise RuntimeError(f"{provider} supports up to 20 results per search")
+
+    base_queries = build_queries(search_input)
+    expanded_queries = []
+    if provider == "tavily":
+        for query_info in base_queries:
+            for variant_query in build_tavily_query_variants(query_info["query"], requested_count):
+                variant_info = dict(query_info)
+                variant_info["query"] = variant_query
+                expanded_queries.append(variant_info)
+    else:
+        expanded_queries = list(base_queries)
+
     all_rows = []
     started_at = time.time()
+    per_request_limit = min(requested_count, 20)
 
-    for index, query_info in enumerate(queries, start=1):
+    for index, query_info in enumerate(expanded_queries, start=1):
         if progress_callback:
-            progress_callback(index, len(queries), query_info, started_at, len(all_rows))
+            progress_callback(index, len(expanded_queries), query_info, started_at, len(all_rows))
 
         query = query_info["query"]
         if provider == "serpapi":
             if not cfg["serpapi_api_key"]:
                 raise RuntimeError("Missing SERPAPI_API_KEY in .env")
-            payload = search_serpapi(cfg["serpapi_api_key"], query, result_count)
+            payload = search_serpapi(cfg["serpapi_api_key"], query, per_request_limit)
             rows = normalize_serpapi_items(query, payload)
         elif provider == "brave":
             if not cfg["brave_api_key"]:
                 raise RuntimeError("Missing BRAVE_SEARCH_API_KEY in .env")
-            payload = search_brave(cfg["brave_api_key"], query, result_count)
+            payload = search_brave(cfg["brave_api_key"], query, per_request_limit)
             rows = normalize_brave_items(query, payload)
         elif provider == "tavily":
             if not cfg["tavily_api_key"]:
                 raise RuntimeError("Missing TAVILY_API_KEY in .env")
-            payload = search_tavily(cfg["tavily_api_key"], query, result_count)
+            payload = search_tavily(cfg["tavily_api_key"], query, per_request_limit)
             rows = normalize_tavily_items(query, payload)
         else:
             raise RuntimeError(f"Unsupported provider: {provider}")
@@ -391,10 +451,10 @@ def run_search(search_input, progress_callback=None, config=None):
         filtered_rows = [row for row in rows if is_facebook_open_to_work_row(row)]
         all_rows.extend(filtered_rows)
 
-    rows = dedupe_rows(all_rows)
+    rows = dedupe_rows(all_rows)[:requested_count]
     return {
         "provider": provider,
-        "queries": queries,
+        "queries": expanded_queries,
         "rows": rows,
         "duration_seconds": time.time() - started_at,
     }
@@ -431,3 +491,8 @@ def save_csv(rows, output_path):
                     "Short Description": row.get("short_description", ""),
                 }
             )
+
+
+
+
+

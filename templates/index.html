@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Engineer Search AI</title>
+    <title>Engineers Search AI</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   </head>
   <body>
@@ -11,7 +11,7 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">Search Intelligence</p>
-          <h1>Engineer Search AI</h1>
+          <h1>Engineers Search AI</h1>
           <p class="hero-subtitle">A sourcing workspace for building engineer search queries, discovering profiles across public sources, and reviewing candidates faster.</p>
         </div>
 
@@ -32,7 +32,8 @@
             <div>
               <h2>Search Builder</h2>
 		<button type="button" class="primary-btn header-search-btn" id="search-button">Run Search</button>
-              <p>Build and run a sourcing search.</p>
+              <div id="search-form-error" class="form-message hidden" role="alert"></div>
+              
             </div>
           </div>
 
@@ -109,6 +110,10 @@
               <select name="num">
                 <option value="10">10 candidates</option>
                 <option value="20" selected>20 candidates</option>
+                <option value="40">40 candidates</option>
+                <option value="60">60 candidates</option>
+                <option value="100">100 candidates</option>
+                <option value="200">200 candidates</option>
               </select>
             </label>
 
@@ -165,6 +170,20 @@
             <p id="results-meta">Run a search to see candidates.</p>
           </div>
 
+          <div id="search-progress" class="search-progress-card hidden" aria-live="polite">
+            <div class="search-progress-top">
+              <div class="search-spinner"></div>
+              <div>
+                <strong id="search-progress-title">Preparing search</strong>
+                <p id="search-progress-copy">Building your query set and getting ready to scan public sources.</p>
+              </div>
+              <span id="search-progress-percent" class="search-progress-percent">0%</span>
+            </div>
+            <div class="search-progress-bar-track">
+              <div id="search-progress-bar" class="search-progress-bar"></div>
+            </div>
+</div>
+
           <div id="results-state" class="empty-state">
             Search results will appear here.
           </div>
@@ -179,7 +198,6 @@
                   <th>Location</th>
                   <th>Stack</th>
                   <th>Source</th>
-                  <th>Status</th>
                 </tr>
               </thead>
               <tbody id="results-body"></tbody>
@@ -203,3 +221,11 @@
     <script src="{{ url_for('static', filename='app.js') }}"></script>
   </body>
 </html>
+
+
+
+
+
+
+
+
