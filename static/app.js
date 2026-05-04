@@ -17,6 +17,13 @@ function scoreClass(score) {
   return "score-weak";
 }
 
+function redirectToLogin(payload) {
+  const next = encodeURIComponent(window.location.pathname + window.location.search);
+  const base = payload?.login_url || "/login";
+  window.location.href = `${base}?next=${next}`;
+}
+
+
 function renderCandidateDetails(candidate) {
   const container = document.getElementById("candidate-details");
   if (!candidate) {
@@ -127,10 +134,14 @@ function renderHistory(items) {
       <span>${item.candidate_count} candidates · ${item.strong_matches} strong</span>
     `;
     node.addEventListener("click", async () => {
-      const response = await fetch(`/api/searches/${item.id}`);
-      const run = await response.json();
-      renderResults(run);
-    });
+  const response = await fetch(`/api/searches/${item.id}`);
+  const run = await response.json();
+  if (response.status === 401) {
+    redirectToLogin(run);
+    return;
+  }
+  renderResults(run);
+});
     container.appendChild(node);
   });
 }
@@ -138,7 +149,13 @@ function renderHistory(items) {
 async function loadHistory() {
   const response = await fetch("/api/searches");
   const items = await response.json();
+  if (response.status === 401) {
+    redirectToLogin(items);
+    return;
+  }
   renderHistory(items);
+}
+
 }
 
 async function handleSearch(event) {
@@ -166,9 +183,14 @@ async function handleSearch(event) {
       body: JSON.stringify(data),
     });
     const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error || "Search failed");
-    }
+if (response.status === 401) {
+  redirectToLogin(payload);
+  return;
+}
+if (!response.ok) {
+  throw new Error(payload.error || "Search failed");
+}
+
     renderResults(payload);
     await loadHistory();
   } catch (error) {

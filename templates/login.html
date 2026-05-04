@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Access | Engineer Search AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <div class="login-shell">
+      <section class="login-panel">
+        <p class="eyebrow">Protected Workspace</p>
+        <h1>Enter access code</h1>
+        <p class="login-copy">This sourcing workspace is protected. Enter the shared access code to continue.</p>
+
+        {% if error %}
+          <div class="login-alert">{{ error }}</div>
+        {% endif %}
+
+        <form method="post" action="{{ url_for('login_submit') }}" class="login-form">
+          <input type="hidden" name="next" value="{{ next_path }}">
+          <label>
+            <span>Access code</span>
+            <input
+              type="password"
+              name="access_code"
+              placeholder="Enter code"
+              autocomplete="current-password"
+              {% if not access_configured %}disabled{% endif %}
+              required
+            >
+          </label>
+          <button type="submit" class="primary-btn" {% if not access_configured %}disabled{% endif %}>
+            Unlock workspace
+          </button>
+        </form>
+      </section>
+    </div>
+  </body>
+</html>

@@ -14,9 +14,16 @@
           <h1>Engineer Search AI</h1>
           <p class="hero-subtitle">A sourcing workspace for building engineer search queries, discovering profiles across public sources, and reviewing candidates faster.</p>
         </div>
-        <div class="topbar-meta">
-          <span id="summary-pill">Phase 1 MVP</span>
-        </div>
+
+
+<div class="topbar-meta topbar-actions">
+  <span id="summary-pill">Phase 1 MVP</span>
+  <form method="post" action="{{ url_for('logout') }}">
+    <button type="submit" class="ghost-btn">Logout</button>
+  </form>
+</div>
+
+
       </header>
 
       <main class="workspace">
