@@ -4,6 +4,7 @@ const state = {
 };
 
 const TAB_ACCESS_KEY = "engineerSearchTabAccess";
+const TAB_BOOTSTRAP_KEY = "engineerSearchTabBootstrap";
 
 function lines(value) {
   return value
@@ -159,6 +160,13 @@ function startSearchProgress(data) {
 
 function enforceTabAccess() {
   if (sessionStorage.getItem(TAB_ACCESS_KEY) === "1") {
+    return true;
+  }
+
+  const bootstrapToken = localStorage.getItem(TAB_BOOTSTRAP_KEY);
+  if (bootstrapToken) {
+    sessionStorage.setItem(TAB_ACCESS_KEY, "1");
+    localStorage.removeItem(TAB_BOOTSTRAP_KEY);
     return true;
   }
 
@@ -361,6 +369,7 @@ const logoutForm = document.querySelector('form[action="/logout"]');
 if (logoutForm) {
   logoutForm.addEventListener("submit", () => {
     sessionStorage.removeItem(TAB_ACCESS_KEY);
+    localStorage.removeItem(TAB_BOOTSTRAP_KEY);
   });
 }
 
@@ -372,6 +381,8 @@ if (enforceTabAccess()) {
 
   loadHistory();
 }
+
+
 
 
 
