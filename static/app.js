@@ -156,7 +156,6 @@ async function loadHistory() {
   renderHistory(items);
 }
 
-}
 
 async function handleSearch(event) {
   event.preventDefault();
@@ -201,5 +200,12 @@ if (!response.ok) {
   }
 }
 
-document.getElementById("search-form").addEventListener("submit", handleSearch);
+const searchForm = document.getElementById("search-form");
+const searchButton = document.getElementById("search-button");
+
+searchForm.addEventListener("submit", handleSearch);
+searchButton.addEventListener("click", () => {
+  searchForm.requestSubmit();
+});
+
 loadHistory();
