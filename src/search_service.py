@@ -1,4 +1,4 @@
-import csv
+﻿import csv
 import json
 import os
 import re
@@ -12,12 +12,13 @@ if platform.system() == "Windows":
 import requests
 from dotenv import load_dotenv
 
+from src.tavily_client import search_tavily
+from src.tavily_query_builder import build_tavily_query_variants
 from src.xray_search import build_query
 
 
 SERPAPI_URL = "https://serpapi.com/search.json"
 BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
-TAVILY_SEARCH_URL = "https://api.tavily.com/search"
 SITE_FILTERS = {
     "linkedin": "site:linkedin.com/in/",
     "facebook": "site:facebook.com",
@@ -72,9 +73,9 @@ def clean_text(value):
         return ""
     return (
         str(value)
+        .replace("ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ", "-")
         .replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“", "-")
-        .replace("Ã¢â‚¬â€œ", "-")
-        .replace("Ã¢â‚¬â€", "-")
+        .replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â", "-")
         .replace("\u2013", "-")
         .replace("\u2014", "-")
         .replace("\xa0", " ")
@@ -196,20 +197,6 @@ def search_brave(api_key, query, num):
     return response.json()
 
 
-def search_tavily(api_key, query, num):
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {
-        "query": query,
-        "search_depth": "basic",
-        "topic": "general",
-        "max_results": num,
-        "include_answer": False,
-        "include_raw_content": False,
-    }
-    response = requests.post(TAVILY_SEARCH_URL, headers=headers, json=payload, timeout=30)
-    response.raise_for_status()
-    return response.json()
-
 
 def extract_name(title):
     parts = [part.strip() for part in clean_text(title).split(" - ") if part.strip()]
@@ -288,48 +275,6 @@ def normalize_tavily_items(query, payload):
             }
         )
     return normalized
-
-
-def tavily_query_count_for_target_count(target_count):
-    try:
-        target_count = int(target_count)
-    except (TypeError, ValueError):
-        target_count = 20
-
-    if target_count <= 20:
-        return 1
-    if target_count <= 40:
-        return 2
-    if target_count <= 60:
-        return 3
-    if target_count <= 100:
-        return 5
-    return 10
-
-
-def build_tavily_query_variants(query, target_count):
-    normalized_query = clean_text(query)
-    variants = [normalized_query]
-    boosters = [
-        '"profile"',
-        '"resume"',
-        '"cv"',
-        '"open to work"',
-        '"engineer"',
-        '"developer"',
-        '"software engineer"',
-        '"backend"',
-        '"frontend"',
-        '"remote"',
-        '"candidate"',
-        '"talent"',
-    ]
-    needed_queries = tavily_query_count_for_target_count(target_count)
-    for booster in boosters:
-        if len(variants) >= needed_queries:
-            break
-        variants.append(f"{normalized_query} {booster}".strip())
-    return variants[:needed_queries]
 
 
 def is_facebook_open_to_work_row(row):
@@ -435,8 +380,6 @@ def run_search(search_input, progress_callback=None, config=None):
             payload = search_brave(cfg["brave_api_key"], query, per_request_limit)
             rows = normalize_brave_items(query, payload)
         elif provider == "tavily":
-            if not cfg["tavily_api_key"]:
-                raise RuntimeError("Missing TAVILY_API_KEY in .env")
             payload = search_tavily(cfg["tavily_api_key"], query, per_request_limit)
             rows = normalize_tavily_items(query, payload)
         else:
@@ -491,6 +434,7 @@ def save_csv(rows, output_path):
                     "Short Description": row.get("short_description", ""),
                 }
             )
+
 
 
 
