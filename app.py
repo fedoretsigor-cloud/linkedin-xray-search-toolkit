@@ -1,17 +1,13 @@
 ﻿import os
-import json
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
-
-from src.enrichment import build_candidate_analysis
-from src.scoring import score_candidate
-from src.search_service import clean_text, run_search
+from src.search_storage import ensure_storage, load_run, load_run_index, save_run
+from src.search_service import run_search
+from src.web_search import build_run_record, build_web_search_request
 
 load_dotenv()
 
@@ -34,85 +30,6 @@ app.config["PERMANENT_SESSION_LIFETIME"] = int(os.getenv("SESSION_LIFETIME_SECON
 
 EXEMPT_ENDPOINTS = {"login", "login_submit", "static"}
 
-
-def ensure_storage():
-    RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    if not INDEX_FILE.exists():
-        INDEX_FILE.write_text("[]", encoding="utf-8")
-
-
-def load_run_index():
-    ensure_storage()
-    return json.loads(INDEX_FILE.read_text(encoding="utf-8"))
-
-
-def save_run_index(items):
-    INDEX_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def get_run_file(run_id):
-    return RUNS_DIR / f"{run_id}.json"
-
-
-def save_run(run_record):
-    items = load_run_index()
-    summary = {
-        "id": run_record["id"],
-        "created_at": run_record["created_at"],
-        "role": run_record["search"]["role"],
-        "locations": run_record["search"]["locations"],
-        "sources": run_record["search"]["sources"],
-        "candidate_count": len(run_record["candidates"]),
-        "strong_matches": len([c for c in run_record["candidates"] if c["score"] >= 85]),
-    }
-    items.insert(0, summary)
-    save_run_index(items)
-    get_run_file(run_record["id"]).write_text(
-        json.dumps(run_record, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-
-def load_run(run_id):
-    run_file = get_run_file(run_id)
-    if not run_file.exists():
-        return None
-    return json.loads(run_file.read_text(encoding="utf-8"))
-
-
-def contains_cyrillic(values):
-    import re
-
-    pattern = re.compile(r"[\u0400-\u04FF]")
-    for value in values:
-        if value and pattern.search(str(value)):
-            return True
-    return False
-
-
-
-def transform_candidates(rows, search):
-    candidates = []
-    for index, row in enumerate(rows, start=1):
-        analysis = score_candidate(row, search)
-        candidates.append(
-            {
-                "id": f"cand-{index}",
-                "name": clean_text(row.get("profile_name", "")) or "Unknown candidate",
-                "role": clean_text(row.get("role", "")),
-                "location": clean_text(row.get("location", "")),
-                "stack": clean_text(row.get("technology", "")),
-                "source": clean_text(row.get("source_site", "")),
-                "status": analysis["status"],
-                "score": analysis["score"],
-                "profile_url": row.get("profile_url", ""),
-                "short_description": clean_text(row.get("short_description", "")),
-                "is_linkedin_profile": "Yes" if row.get("is_linkedin_profile") else "No",
-                "search_query": clean_text(row.get("search_query", "")),
-                "analysis": build_candidate_analysis(row, search, analysis),
-            }
-        )
-    return sorted(candidates, key=lambda item: item["score"], reverse=True)
 
 def auth_enabled():
     return bool(ACCESS_CODE)
@@ -190,7 +107,6 @@ def logout():
     return redirect(url_for("login"))
 
 
-
 @app.get("/")
 def index():
     return render_template("index.html")
@@ -198,12 +114,12 @@ def index():
 
 @app.get("/api/searches")
 def list_searches():
-    return jsonify(load_run_index())
+    return jsonify(load_run_index(RUNS_DIR, INDEX_FILE))
 
 
 @app.get("/api/searches/<run_id>")
 def get_search(run_id):
-    run = load_run(run_id)
+    run = load_run(RUNS_DIR, run_id)
     if not run:
         return jsonify({"error": "Search run not found"}), 404
     return jsonify(run)
@@ -212,72 +128,19 @@ def get_search(run_id):
 @app.post("/api/search")
 def create_search():
     payload = request.get_json(force=True)
-    requested_num = payload.get("num", DEFAULT_SEARCH_RESULTS)
     try:
-        requested_num = int(requested_num)
-    except (TypeError, ValueError):
-        return jsonify({"error": "Search results limit must be a number"}), 400
-
-    search = {
-        "role": clean_text(payload.get("role", "")),
-        "titles": [clean_text(value) for value in payload.get("titles", []) if clean_text(value)],
-        "tech_groups": [clean_text(value) for value in payload.get("tech_groups", []) if clean_text(value)],
-        "locations": [clean_text(value) for value in payload.get("locations", []) if clean_text(value)],
-        "sources": payload.get("sources", ["linkedin"]),
-        "experience": clean_text(payload.get("experience", "")),
-        "availability": clean_text(payload.get("availability", "")),
-        "results_limit": requested_num,
-    }
-
-    validation_values = [
-        search["role"],
-        *search["titles"],
-        *search["tech_groups"],
-        *search["locations"],
-        search["experience"],
-        search["availability"],
-    ]
-
-    if contains_cyrillic(validation_values):
-        return jsonify({"error": "Please use English only."}), 400
-
-    if not search["titles"] and search["role"]:
-        search["titles"] = [search["role"]]
-
-    if not search["titles"]:
-        return jsonify({"error": "At least one role/title is required"}), 400
-
-    search_input = {
-        "titles": search["titles"],
-        "skill_groups": [[part.strip() for part in group.split("|") if part.strip()] for group in search["tech_groups"]] or [[]],
-        "locations": search["locations"] or [""],
-        "extras": [search["availability"]] if search["availability"] else [],
-        "source_sites": search["sources"] or ["linkedin"],
-        "num": requested_num,
-        "provider": None,
-    }
-
-    try:
+        search, search_input = build_web_search_request(payload, DEFAULT_SEARCH_RESULTS)
         result = run_search(search_input)
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    search["stack_summary"] = ", ".join(search["tech_groups"])
-    candidates = transform_candidates(result["rows"], search)
-    run_record = {
-        "id": uuid.uuid4().hex[:10],
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "search": search,
-        "queries_count": len(result["queries"]),
-        "duration_seconds": round(result["duration_seconds"], 2),
-        "candidates": candidates,
-    }
-    save_run(run_record)
+    run_record = build_run_record(search, result)
+    save_run(RUNS_DIR, INDEX_FILE, run_record)
     return jsonify(run_record)
 
 
 if __name__ == "__main__":
-    ensure_storage()
+    ensure_storage(RUNS_DIR, INDEX_FILE)
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "0").lower() in {"1", "true", "yes"}
