@@ -12,10 +12,7 @@ if platform.system() == "Windows":
 import requests
 from dotenv import load_dotenv
 
-from src.dedupe import dedupe_rows
-from src.tavily_client import search_tavily
-from src.tavily_normalizer import normalize_tavily_items
-from src.tavily_query_builder import build_tavily_query_variants
+from src.search_orchestrator import run_search as run_search_pipeline
 from src.xray_search import build_query
 
 
@@ -298,71 +295,17 @@ def print_console_progress(current, total, query_info, started_at):
 
 
 def run_search(search_input, progress_callback=None, config=None):
-    cfg = config or load_config()
-    provider = search_input.get("provider") or cfg["provider"]
-    requested_count = search_input.get("num") or cfg["default_num"]
-    try:
-        requested_count = int(requested_count)
-    except (TypeError, ValueError):
-        raise RuntimeError("num must be a number")
-    if requested_count < 1:
-        raise RuntimeError("num must be at least 1")
-
-    if provider != "tavily" and requested_count > 20:
-        raise RuntimeError(f"{provider} supports up to 20 results per search")
-
-    base_queries = build_queries(search_input)
-    expanded_queries = []
-    if provider == "tavily":
-        for query_info in base_queries:
-            for variant_query in build_tavily_query_variants(query_info["query"], requested_count):
-                variant_info = dict(query_info)
-                variant_info["query"] = variant_query
-                expanded_queries.append(variant_info)
-    else:
-        expanded_queries = list(base_queries)
-
-    all_rows = []
-    started_at = time.time()
-    per_request_limit = min(requested_count, 20)
-
-    for index, query_info in enumerate(expanded_queries, start=1):
-        if progress_callback:
-            progress_callback(index, len(expanded_queries), query_info, started_at, len(all_rows))
-
-        query = query_info["query"]
-        if provider == "serpapi":
-            if not cfg["serpapi_api_key"]:
-                raise RuntimeError("Missing SERPAPI_API_KEY in .env")
-            payload = search_serpapi(cfg["serpapi_api_key"], query, per_request_limit)
-            rows = normalize_serpapi_items(query, payload)
-        elif provider == "brave":
-            if not cfg["brave_api_key"]:
-                raise RuntimeError("Missing BRAVE_SEARCH_API_KEY in .env")
-            payload = search_brave(cfg["brave_api_key"], query, per_request_limit)
-            rows = normalize_brave_items(query, payload)
-        elif provider == "tavily":
-            payload = search_tavily(cfg["tavily_api_key"], query, per_request_limit)
-            rows = normalize_tavily_items(query, payload)
-        else:
-            raise RuntimeError(f"Unsupported provider: {provider}")
-
-        for row in rows:
-            row["role"] = query_info["title_input"]
-            row["technology"] = query_info["skill_input"]
-            row["location"] = query_info["location_input"]
-            row["source_site"] = query_info["source_site"]
-
-        filtered_rows = [row for row in rows if is_facebook_open_to_work_row(row)]
-        all_rows.extend(filtered_rows)
-
-    rows = dedupe_rows(all_rows)[:requested_count]
-    return {
-        "provider": provider,
-        "queries": expanded_queries,
-        "rows": rows,
-        "duration_seconds": time.time() - started_at,
-    }
+    return run_search_pipeline(
+        search_input,
+        config=config or load_config(),
+        build_queries=build_queries,
+        normalize_serpapi_items=normalize_serpapi_items,
+        normalize_brave_items=normalize_brave_items,
+        search_serpapi=search_serpapi,
+        search_brave=search_brave,
+        row_filter=is_facebook_open_to_work_row,
+        progress_callback=progress_callback,
+    )
 
 
 def save_csv(rows, output_path):
