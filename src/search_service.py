@@ -1,23 +1,21 @@
-﻿import csv
-import json
+import csv
 import os
-import re
+import platform
 import time
 from pathlib import Path
-from urllib.parse import urlparse
-import platform
 
 if platform.system() == "Windows":
     import certifi_win32  # noqa: F401
-import requests
 from dotenv import load_dotenv
 
+from src.facebook_filter import is_facebook_open_to_work_row
+from src.search_clients import search_brave, search_serpapi
+from src.search_normalizer import normalize_brave_items, normalize_serpapi_items
 from src.search_orchestrator import run_search as run_search_pipeline
+from src.text_utils import clean_text
 from src.xray_search import build_query
 
 
-SERPAPI_URL = "https://serpapi.com/search.json"
-BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 SITE_FILTERS = {
     "linkedin": "site:linkedin.com/in/",
     "facebook": "site:facebook.com",
@@ -26,32 +24,6 @@ SITE_FILTERS = {
     "wellfound": "site:wellfound.com",
     "devpost": "site:devpost.com",
 }
-FACEBOOK_OPEN_TO_WORK_PATTERNS = [
-    r"\blooking for a job\b",
-    r"\blooking for job\b",
-    r"\blooking for work\b",
-    r"\bcurrently looking\b",
-    r"\bseeking opportunities\b",
-    r"\bseeking opportunity\b",
-    r"\bseeking job opportunities\b",
-    r"\bopen to work\b",
-    r"\bjob seeker\b",
-    r"\bi am looking for\b",
-    r"\bi'm looking for\b",
-]
-FACEBOOK_HIRING_PATTERNS = [
-    r"\bhiring\b",
-    r"\bwe are hiring\b",
-    r"\bjob available\b",
-    r"\bjob opportunity\b",
-    r"\bdeveloper needed\b",
-    r"\blooking for\s+\d",
-    r"\bwe are looking for\b",
-    r"\bposition\b",
-    r"\bvaccancy\b",
-    r"\bvacancy\b",
-    r"\bapply now\b",
-]
 
 
 def load_config():
@@ -65,21 +37,6 @@ def load_config():
         "brave_api_key": os.getenv("BRAVE_SEARCH_API_KEY", "").strip(),
         "tavily_api_key": os.getenv("TAVILY_API_KEY", "").strip(),
     }
-
-
-def clean_text(value):
-    if not value:
-        return ""
-    return (
-        str(value)
-        .replace("ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ", "-")
-        .replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“", "-")
-        .replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â", "-")
-        .replace("\u2013", "-")
-        .replace("\u2014", "-")
-        .replace("\xa0", " ")
-        .strip()
-    )
 
 
 def read_lines(path):
@@ -173,97 +130,6 @@ def build_queries(search_input):
     return queries
 
 
-def search_serpapi(api_key, query, num):
-    params = {"key": api_key, "engine": "google", "q": query, "num": num}
-    response = requests.get(SERPAPI_URL, params=params, timeout=30)
-    response.raise_for_status()
-    return response.json()
-
-
-def search_brave(api_key, query, num):
-    headers = {"Accept": "application/json", "X-Subscription-Token": api_key}
-    params = {"q": query, "count": num}
-    response = requests.get(BRAVE_SEARCH_URL, headers=headers, params=params, timeout=30)
-    response.raise_for_status()
-    return response.json()
-
-
-
-def extract_name(title):
-    parts = [part.strip() for part in clean_text(title).split(" - ") if part.strip()]
-    if parts:
-        return parts[0]
-    return clean_text(title)
-
-
-def extract_linkedin_metadata(url):
-    parsed = urlparse(url or "")
-    path = (parsed.path or "").strip()
-    normalized_path = path.strip("/")
-    parts = [part for part in normalized_path.split("/") if part]
-    is_profile = len(parts) >= 2 and parts[0] == "in"
-    return {"is_profile": is_profile}
-
-
-def normalize_serpapi_items(query, payload):
-    items = payload.get("organic_results", [])
-    normalized = []
-    for item in items:
-        title = clean_text(item.get("title", ""))
-        link = item.get("link", "")
-        linkedin_meta = extract_linkedin_metadata(link)
-        normalized.append(
-            {
-                "search_query": clean_text(query),
-                "profile_name": extract_name(title),
-                "result_title": title,
-                "profile_url": link,
-                "is_linkedin_profile": linkedin_meta["is_profile"],
-                "short_description": clean_text(item.get("snippet", "")),
-                "result_position": item.get("position", ""),
-            }
-        )
-    return normalized
-
-
-def normalize_brave_items(query, payload):
-    items = payload.get("web", {}).get("results", [])
-    normalized = []
-    for item in items:
-        title = clean_text(item.get("title", ""))
-        link = item.get("url", "")
-        linkedin_meta = extract_linkedin_metadata(link)
-        normalized.append(
-            {
-                "search_query": clean_text(query),
-                "profile_name": extract_name(title),
-                "result_title": title,
-                "profile_url": link,
-                "is_linkedin_profile": linkedin_meta["is_profile"],
-                "short_description": clean_text(item.get("description", "")),
-                "result_position": "",
-            }
-        )
-    return normalized
-
-
-def is_facebook_open_to_work_row(row):
-    if row.get("source_site", "") != "facebook":
-        return True
-    text = clean_text(
-        " ".join(
-            [
-                row.get("profile_name", ""),
-                row.get("result_title", ""),
-                row.get("short_description", ""),
-            ]
-        )
-    ).lower()
-    has_open_to_work = any(re.search(pattern, text) for pattern in FACEBOOK_OPEN_TO_WORK_PATTERNS)
-    has_hiring_signal = any(re.search(pattern, text) for pattern in FACEBOOK_HIRING_PATTERNS)
-    return has_open_to_work and not has_hiring_signal
-
-
 def format_duration(seconds):
     seconds = max(int(seconds), 0)
     minutes, seconds = divmod(seconds, 60)
@@ -339,9 +205,3 @@ def save_csv(rows, output_path):
                     "Short Description": row.get("short_description", ""),
                 }
             )
-
-
-
-
-
-

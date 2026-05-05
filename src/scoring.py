@@ -1,16 +1,4 @@
-def _clean_text(value):
-    if not value:
-        return ""
-    return (
-        str(value)
-        .replace("ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ", "-")
-        .replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“", "-")
-        .replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â", "-")
-        .replace("\u2013", "-")
-        .replace("\u2014", "-")
-        .replace("\xa0", " ")
-        .strip()
-    )
+from src.text_utils import clean_text
 
 
 def score_candidate(candidate, search):
@@ -18,10 +6,10 @@ def score_candidate(candidate, search):
     reasons = []
     risks = []
     source_site = candidate.get("source_site", "")
-    description = _clean_text(candidate.get("short_description", "")).lower()
-    role = _clean_text(candidate.get("role", ""))
-    technology = _clean_text(candidate.get("technology", ""))
-    location = _clean_text(candidate.get("location", ""))
+    description = clean_text(candidate.get("short_description", "")).lower()
+    role = clean_text(candidate.get("role", ""))
+    technology = clean_text(candidate.get("technology", ""))
+    location = clean_text(candidate.get("location", ""))
 
     if role:
         score += 15

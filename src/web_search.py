@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from src.enrichment import build_candidate_analysis
 from src.scoring import score_candidate
-from src.search_service import clean_text
+from src.text_utils import clean_text
 
 
 def contains_cyrillic(values):
