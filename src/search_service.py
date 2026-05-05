@@ -12,6 +12,7 @@ if platform.system() == "Windows":
 import requests
 from dotenv import load_dotenv
 
+from src.dedupe import dedupe_rows
 from src.tavily_client import search_tavily
 from src.tavily_normalizer import normalize_tavily_items
 from src.tavily_query_builder import build_tavily_query_variants
@@ -82,14 +83,6 @@ def clean_text(value):
         .replace("\xa0", " ")
         .strip()
     )
-
-
-def normalize_link(url):
-    value = (url or "").strip()
-    if not value:
-        return value
-    value = re.sub(r"[?#].*$", "", value)
-    return value.rstrip("/")
 
 
 def read_lines(path):
@@ -272,17 +265,6 @@ def is_facebook_open_to_work_row(row):
     has_open_to_work = any(re.search(pattern, text) for pattern in FACEBOOK_OPEN_TO_WORK_PATTERNS)
     has_hiring_signal = any(re.search(pattern, text) for pattern in FACEBOOK_HIRING_PATTERNS)
     return has_open_to_work and not has_hiring_signal
-
-
-def dedupe_rows(rows):
-    seen = {}
-    for row in rows:
-        key = normalize_link(row.get("profile_url", ""))
-        if not key:
-            key = f"{row.get('result_title', '')}|{row.get('search_query', '')}"
-        if key not in seen:
-            seen[key] = row
-    return list(seen.values())
 
 
 def format_duration(seconds):
