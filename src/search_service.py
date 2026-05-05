@@ -13,6 +13,7 @@ import requests
 from dotenv import load_dotenv
 
 from src.tavily_client import search_tavily
+from src.tavily_normalizer import normalize_tavily_items
 from src.tavily_query_builder import build_tavily_query_variants
 from src.xray_search import build_query
 
@@ -251,27 +252,6 @@ def normalize_brave_items(query, payload):
                 "is_linkedin_profile": linkedin_meta["is_profile"],
                 "short_description": clean_text(item.get("description", "")),
                 "result_position": "",
-            }
-        )
-    return normalized
-
-
-def normalize_tavily_items(query, payload):
-    items = payload.get("results", [])
-    normalized = []
-    for index, item in enumerate(items, start=1):
-        title = clean_text(item.get("title", ""))
-        link = item.get("url", "")
-        linkedin_meta = extract_linkedin_metadata(link)
-        normalized.append(
-            {
-                "search_query": clean_text(query),
-                "profile_name": extract_name(title),
-                "result_title": title,
-                "profile_url": link,
-                "is_linkedin_profile": linkedin_meta["is_profile"],
-                "short_description": clean_text(item.get("content", "")),
-                "result_position": index,
             }
         )
     return normalized
