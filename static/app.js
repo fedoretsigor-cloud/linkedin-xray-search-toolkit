@@ -14,7 +14,7 @@ function lines(value) {
 }
 
 function hasCyrillic(value) {
-  return /[?-??-?????????]/.test(value || "");
+  return /[\u0400-\u04FF]/.test(value || "");
 }
 
 function validateEnglishOnly(data) {
@@ -226,7 +226,7 @@ function selectCandidate(candidateId) {
 function renderResults(run) {
   state.run = run;
   const meta = document.getElementById("results-meta");
-  meta.textContent = `${run.candidates.length} candidates · ${run.queries_count} queries · ${run.duration_seconds}s`;
+  meta.textContent = `${run.candidates.length} candidates - ${run.queries_count} queries - ${run.duration_seconds}s`;
 
   const empty = document.getElementById("results-state");
   const wrapper = document.getElementById("results-table-wrapper");
@@ -277,7 +277,7 @@ function renderHistory(items) {
     node.className = "history-item";
     node.innerHTML = `
       <strong>${item.role || "Untitled search"}</strong>
-      <span>${item.candidate_count} candidates · ${item.strong_matches} strong</span>
+      <span>${item.candidate_count} candidates - ${item.strong_matches} strong</span>
     `;
     node.addEventListener("click", async () => {
       const response = await fetch(`/api/searches/${item.id}`);
@@ -306,9 +306,6 @@ async function handleSearch(event) {
   event.preventDefault();
   const form = event.currentTarget;
   const button = document.getElementById("search-button");
-  button.disabled = true;
-  button.classList.add("is-loading");
-  button.textContent = "Searching...";
   setFormMessage("");
 
   const data = {
@@ -322,16 +319,18 @@ async function handleSearch(event) {
     sources: Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value),
   };
 
-  const progress = startSearchProgress(data);
-
   if (!validateEnglishOnly(data)) {
-    progress.fail("Input needs attention");
     setFormMessage("Please use English only.");
     button.disabled = false;
     button.classList.remove("is-loading");
     button.textContent = "Run Search";
     return;
   }
+
+  button.disabled = true;
+  button.classList.add("is-loading");
+  button.textContent = "Searching...";
+  const progress = startSearchProgress(data);
 
   try {
     const response = await fetch("/api/search", {

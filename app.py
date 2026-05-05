@@ -156,7 +156,7 @@ def build_outreach(candidate, search):
 def contains_cyrillic(values):
     import re
 
-    pattern = re.compile(r"[Ð-Ð¯Ð°-ÑÐÑ‘Ð†Ñ–Ð‡Ñ—Ð„Ñ”]")
+    pattern = re.compile(r"[\u0400-\u04FF]")
     for value in values:
         if value and pattern.search(str(value)):
             return True
@@ -254,7 +254,16 @@ def login_submit():
     session.permanent = False
     session["is_authenticated"] = True
     safe_next = next_path if next_path.startswith("/") else "/"
-    return redirect(safe_next)
+    response = redirect(safe_next)
+    response.set_cookie(
+        "engineer_search_tab_access",
+        "1",
+        max_age=30,
+        httponly=False,
+        samesite="Lax",
+        secure=app.config["SESSION_COOKIE_SECURE"],
+    )
+    return response
 
 
 @app.post("/logout")
@@ -330,7 +339,11 @@ def create_search():
         "provider": None,
     }
 
-    result = run_search(search_input)
+    try:
+        result = run_search(search_input)
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 400
+
     search["stack_summary"] = ", ".join(search["tech_groups"])
     candidates = transform_candidates(result["rows"], search)
     run_record = {
@@ -351,4 +364,3 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "0").lower() in {"1", "true", "yes"}
     app.run(debug=debug, host=host, port=port)
-
