@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
 
+from src.enrichment import build_candidate_analysis
 from src.scoring import score_candidate
 from src.search_service import clean_text, run_search
 
@@ -79,23 +80,6 @@ def load_run(run_id):
     return json.loads(run_file.read_text(encoding="utf-8"))
 
 
-def extract_location_hint(candidate):
-    value = clean_text(candidate.get("location") or candidate.get("search_query"))
-    return value
-
-
-def build_outreach(candidate, search):
-    first_name = clean_text(candidate.get("profile_name", "")).split(" ")[0] or "there"
-    role = search["role"] or "this role"
-    stack = search["stack_summary"] or "the requested stack"
-    location = ", ".join(search["locations"]) or "the target market"
-    return (
-        f"Hi {first_name}, I found your profile while searching for {role} talent in {location}. "
-        f"Your background looks relevant for {stack}, and I would love to share a role that may fit. "
-        f"If you are open to hearing about opportunities, I can send more details."
-    )
-
-
 def contains_cyrillic(values):
     import re
 
@@ -125,16 +109,7 @@ def transform_candidates(rows, search):
                 "short_description": clean_text(row.get("short_description", "")),
                 "is_linkedin_profile": "Yes" if row.get("is_linkedin_profile") else "No",
                 "search_query": clean_text(row.get("search_query", "")),
-                "analysis": {
-                    "summary": (
-                        f"{clean_text(row.get('profile_name', 'Unknown'))}, "
-                        f"{clean_text(row.get('role', 'profile result'))}, "
-                        f"{extract_location_hint(row)}"
-                    ),
-                    "reasons": analysis["reasons"],
-                    "risks": analysis["risks"],
-                    "outreach": build_outreach(row, search),
-                },
+                "analysis": build_candidate_analysis(row, search, analysis),
             }
         )
     return sorted(candidates, key=lambda item: item["score"], reverse=True)
