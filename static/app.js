@@ -52,6 +52,23 @@ function formatTitleCaseValue(value) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function renderList(items, emptyText) {
+  const values = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!values.length) {
+    return `<li>${escapeHtml(emptyText)}</li>`;
+  }
+  return values.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+}
+
 function redirectToLogin(payload) {
   const next = encodeURIComponent(window.location.pathname + window.location.search);
   const base = payload?.login_url || "/login";
@@ -187,29 +204,62 @@ function renderCandidateDetails(candidate) {
     return;
   }
 
-  const reasons = candidate.analysis.reasons.map((item) => `<li>${item}</li>`).join("");
+  const analysis = candidate.analysis || {};
+  const reasons = renderList(analysis.reasons, "No positive scoring signals were captured.");
+  const risks = renderList(analysis.risks, "No major risks were flagged.");
+  const sourceSignals = [
+    `Status: ${candidate.status}`,
+    `Source: ${formatTitleCaseValue(candidate.source)}`,
+    `Direct LinkedIn profile: ${candidate.is_linkedin_profile}`,
+    `Stack context: ${candidate.stack || "Not provided"}`,
+    `Search query: ${candidate.search_query || "Not available"}`,
+  ];
+  const signals = renderList(sourceSignals, "No search signals available.");
 
   container.className = "details-card";
   container.innerHTML = `
     <div class="candidate-hero">
       <div>
-        <h3>${candidate.name}</h3>
-        <p>${formatTitleCaseValue(candidate.role || "Profile result")}, ${formatTitleCaseValue(candidate.location || "Unknown location")}</p>
+        <h3>${escapeHtml(candidate.name)}</h3>
+        <p>${escapeHtml(formatTitleCaseValue(candidate.role || "Profile result"))}, ${escapeHtml(formatTitleCaseValue(candidate.location || "Unknown location"))}</p>
       </div>
       <div class="score-badge ${scoreClass(candidate.score)}">${candidate.score}%</div>
     </div>
+    <div class="detail-block debug-block">
+      <div class="debug-header">
+        <div>
+          <h4>Score Explanation</h4>
+          <p>Why this candidate is ranked here.</p>
+        </div>
+        <span class="status-chip ${scoreClass(candidate.score)}">${escapeHtml(candidate.status)}</span>
+      </div>
+      <div class="debug-grid">
+        <div class="debug-card">
+          <h5>Positive Signals</h5>
+          <ul>${reasons}</ul>
+        </div>
+        <div class="debug-card">
+          <h5>Risks / Missing Evidence</h5>
+          <ul>${risks}</ul>
+        </div>
+      </div>
+      <details class="debug-raw">
+        <summary>Search signals</summary>
+        <ul>${signals}</ul>
+      </details>
+    </div>
     <div class="detail-block">
       <h4>Candidate Summary</h4>
-      <p>${candidate.analysis.summary}</p>
+      <p>${escapeHtml(analysis.summary || "No summary available.")}</p>
     </div>
     <div class="detail-block">
       <h4>Profile</h4>
-      <p><a href="${candidate.profile_url}" target="_blank" rel="noreferrer">Open source profile</a></p>
-      <p>${candidate.short_description || "No indexed description available."}</p>
+      <p><a href="${escapeHtml(candidate.profile_url)}" target="_blank" rel="noreferrer">Open source profile</a></p>
+      <p>${escapeHtml(candidate.short_description || "No indexed description available.")}</p>
     </div>
     <div class="detail-block">
       <h4>Suggested Outreach Message</h4>
-      <p>${candidate.analysis.outreach}</p>
+      <p>${escapeHtml(analysis.outreach || "No outreach draft available.")}</p>
     </div>
   `;
 }
@@ -250,12 +300,12 @@ function renderResults(run) {
     row.dataset.id = candidate.id;
     row.innerHTML = `
       <td><span class="score-pill ${scoreClass(candidate.score)}">${candidate.score}%</span></td>
-      <td>${candidate.name}</td>
-      <td>${formatTitleCaseValue(candidate.role)}</td>
-      <td>${formatTitleCaseValue(candidate.location)}</td>
-      <td>${candidate.stack || "-"}</td>
-      <td>${formatTitleCaseValue(candidate.source)}</td>
-      <td>${candidate.status}</td>
+      <td>${escapeHtml(candidate.name)}</td>
+      <td>${escapeHtml(formatTitleCaseValue(candidate.role))}</td>
+      <td>${escapeHtml(formatTitleCaseValue(candidate.location))}</td>
+      <td>${escapeHtml(candidate.stack || "-")}</td>
+      <td>${escapeHtml(formatTitleCaseValue(candidate.source))}</td>
+      <td>${escapeHtml(candidate.status)}</td>
     `;
     row.addEventListener("click", () => selectCandidate(candidate.id));
     body.appendChild(row);
@@ -276,7 +326,7 @@ function renderHistory(items) {
     const node = document.createElement("button");
     node.className = "history-item";
     node.innerHTML = `
-      <strong>${item.role || "Untitled search"}</strong>
+      <strong>${escapeHtml(item.role || "Untitled search")}</strong>
       <span>${item.candidate_count} candidates - ${item.strong_matches} strong</span>
     `;
     node.addEventListener("click", async () => {
