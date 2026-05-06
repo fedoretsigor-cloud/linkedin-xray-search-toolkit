@@ -205,9 +205,6 @@ function renderCandidateDetails(candidate) {
   }
 
   const analysis = candidate.analysis || {};
-  const reasons = renderList(analysis.reasons, "No positive scoring signals were captured.");
-  const risks = renderList(analysis.risks, "No major risks were flagged.");
-  const searchQuery = candidate.search_query || "Not available";
 
   container.className = "details-card";
   container.innerHTML = `
@@ -222,29 +219,6 @@ function renderCandidateDetails(candidate) {
       <h4>Profile</h4>
       <p><a href="${escapeHtml(candidate.profile_url)}" target="_blank" rel="noreferrer">Open source profile</a></p>
       <p>${escapeHtml(candidate.short_description || "No indexed description available.")}</p>
-    </div>
-    <div class="detail-block debug-block">
-      <div class="debug-header">
-        <div>
-          <h4>Score Explanation</h4>
-          <p>Why this candidate is ranked here.</p>
-        </div>
-        <span class="status-chip ${scoreClass(candidate.score)}">${escapeHtml(candidate.status)}</span>
-      </div>
-      <div class="debug-grid">
-        <div class="debug-card">
-          <h5>Positive Signals</h5>
-          <ul>${reasons}</ul>
-        </div>
-        <div class="debug-card">
-          <h5>Risks / Missing Evidence</h5>
-          <ul>${risks}</ul>
-        </div>
-      </div>
-      <div class="query-card">
-        <h5>Search Query</h5>
-        <code>${escapeHtml(searchQuery)}</code>
-      </div>
     </div>
     <div class="detail-block">
       <h4>Suggested Outreach Message</h4>
