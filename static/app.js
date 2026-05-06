@@ -225,6 +225,15 @@ function renderCandidateDetails(candidate) {
       </div>
       <div class="score-badge ${scoreClass(candidate.score)}">${candidate.score}%</div>
     </div>
+    <div class="detail-block">
+      <h4>Candidate Summary</h4>
+      <p>${escapeHtml(analysis.summary || "No summary available.")}</p>
+    </div>
+    <div class="detail-block">
+      <h4>Profile</h4>
+      <p><a href="${escapeHtml(candidate.profile_url)}" target="_blank" rel="noreferrer">Open source profile</a></p>
+      <p>${escapeHtml(candidate.short_description || "No indexed description available.")}</p>
+    </div>
     <div class="detail-block debug-block">
       <div class="debug-header">
         <div>
@@ -247,15 +256,6 @@ function renderCandidateDetails(candidate) {
         <summary>Search signals</summary>
         <ul>${signals}</ul>
       </details>
-    </div>
-    <div class="detail-block">
-      <h4>Candidate Summary</h4>
-      <p>${escapeHtml(analysis.summary || "No summary available.")}</p>
-    </div>
-    <div class="detail-block">
-      <h4>Profile</h4>
-      <p><a href="${escapeHtml(candidate.profile_url)}" target="_blank" rel="noreferrer">Open source profile</a></p>
-      <p>${escapeHtml(candidate.short_description || "No indexed description available.")}</p>
     </div>
     <div class="detail-block">
       <h4>Suggested Outreach Message</h4>
