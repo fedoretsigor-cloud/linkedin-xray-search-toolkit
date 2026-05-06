@@ -9,6 +9,7 @@ if platform.system() == "Windows":
 from dotenv import load_dotenv
 
 from src.facebook_filter import is_facebook_open_to_work_row
+from src.result_quality import is_quality_search_row
 from src.search_clients import search_brave, search_serpapi
 from src.search_normalizer import normalize_brave_items, normalize_serpapi_items
 from src.search_orchestrator import run_search as run_search_pipeline
@@ -169,7 +170,7 @@ def run_search(search_input, progress_callback=None, config=None):
         normalize_brave_items=normalize_brave_items,
         search_serpapi=search_serpapi,
         search_brave=search_brave,
-        row_filter=is_facebook_open_to_work_row,
+        row_filter=lambda row: is_facebook_open_to_work_row(row) and is_quality_search_row(row),
         progress_callback=progress_callback,
     )
 
