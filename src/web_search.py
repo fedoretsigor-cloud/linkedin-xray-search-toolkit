@@ -15,6 +15,19 @@ def contains_cyrillic(values):
     return False
 
 
+def merge_role_titles(role, titles):
+    merged = []
+    seen = set()
+    for value in [role, *titles]:
+        title = clean_text(value)
+        key = title.lower()
+        if not title or key in seen:
+            continue
+        seen.add(key)
+        merged.append(title)
+    return merged
+
+
 def build_web_search_request(payload, default_results):
     requested_num = payload.get("num", default_results)
     try:
@@ -44,8 +57,7 @@ def build_web_search_request(payload, default_results):
     if contains_cyrillic(validation_values):
         raise RuntimeError("Please use English only.")
 
-    if not search["titles"] and search["role"]:
-        search["titles"] = [search["role"]]
+    search["titles"] = merge_role_titles(search["role"], search["titles"])
     if not search["titles"]:
         raise RuntimeError("At least one role/title is required")
 
