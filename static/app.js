@@ -207,14 +207,7 @@ function renderCandidateDetails(candidate) {
   const analysis = candidate.analysis || {};
   const reasons = renderList(analysis.reasons, "No positive scoring signals were captured.");
   const risks = renderList(analysis.risks, "No major risks were flagged.");
-  const sourceSignals = [
-    `Status: ${candidate.status}`,
-    `Source: ${formatTitleCaseValue(candidate.source)}`,
-    `Direct LinkedIn profile: ${candidate.is_linkedin_profile}`,
-    `Stack context: ${candidate.stack || "Not provided"}`,
-    `Search query: ${candidate.search_query || "Not available"}`,
-  ];
-  const signals = renderList(sourceSignals, "No search signals available.");
+  const searchQuery = candidate.search_query || "Not available";
 
   container.className = "details-card";
   container.innerHTML = `
@@ -248,10 +241,10 @@ function renderCandidateDetails(candidate) {
           <ul>${risks}</ul>
         </div>
       </div>
-      <details class="debug-raw">
-        <summary>Search signals</summary>
-        <ul>${signals}</ul>
-      </details>
+      <div class="query-card">
+        <h5>Search Query</h5>
+        <code>${escapeHtml(searchQuery)}</code>
+      </div>
     </div>
     <div class="detail-block">
       <h4>Suggested Outreach Message</h4>

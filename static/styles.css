@@ -313,23 +313,31 @@ h1, h2, h3, h4, p { margin-top: 0; }
   background: rgba(11, 17, 32, 0.42);
   border: 1px solid rgba(255, 255, 255, 0.07);
 }
-.debug-card ul,
-.debug-raw ul {
+.debug-card ul {
   margin: 8px 0 0;
   padding-left: 18px;
 }
-.debug-card li,
-.debug-raw li {
+.debug-card li {
   margin-bottom: 6px;
 }
-.debug-raw {
+.query-card {
   margin-top: 10px;
-  color: var(--muted);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(61, 217, 196, 0.07);
+  border: 1px solid rgba(61, 217, 196, 0.16);
 }
-.debug-raw summary {
-  cursor: pointer;
-  color: #9fc2ff;
-  font-weight: 700;
+.query-card h5 {
+  margin-bottom: 8px;
+}
+.query-card code {
+  display: block;
+  color: #b9d7ff;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 13px;
 }
 a { color: #7fd9ff; }
 
