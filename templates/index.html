@@ -38,13 +38,29 @@
           </div>
 
           <form id="search-form" class="builder-form">
+            <div class="two-col preset-row">
+              <label>
+                <span class="label-row">
+                  <span>Role Group</span>
+                </span>
+                <select id="role-group-select" name="role_group">
+                  <option value="">Custom / no preset</option>
+                </select>
+              </label>
+
+              <label>
+                <span class="label-row">
+                  <span>Role Preset</span>
+                </span>
+                <select id="role-preset-select" name="role_preset" disabled>
+                  <option value="">Select group first</option>
+                </select>
+              </label>
+            </div>
+
             <label>
               <span class="label-row">
                 <span>Role</span>
-                <span class="hint-badge">
-                  Step 1
-                  <span class="hint-tooltip">Start with the main engineer role you want to search for.</span>
-                </span>
               </span>
               <input name="role" placeholder="Senior Java Developer">
             </label>
@@ -52,21 +68,21 @@
             <label>
               <span class="label-row">
                 <span>Role Variants</span>
-                <span class="hint-badge">
-                  Step 2
-                  <span class="hint-tooltip">Add close title variations to widen recall without changing the target role too much.</span>
-                </span>
               </span>
-              <textarea name="titles" rows="3" placeholder="Optional extra roles only&#10;Backend Engineer&#10;Java Engineer"></textarea>
+              <input type="hidden" name="titles" id="role-variants-hidden">
+              <div class="variant-editor">
+                <div id="role-variant-chips" class="variant-chips" aria-live="polite"></div>
+                <div class="variant-add-row">
+                  <input id="role-variant-input" type="text" placeholder="Add variant, e.g. Backend Engineer">
+                  <button type="button" class="ghost-btn compact-btn" id="add-role-variant">Add</button>
+                </div>
+                <p class="field-note">Presets generate editable variants. Remove noisy titles before running search.</p>
+              </div>
             </label>
 
             <label>
               <span class="label-row">
                 <span>Tech Stacks</span>
-                <span class="hint-badge">
-                  Step 3
-                  <span class="hint-tooltip">Define the required technologies. Use one stack per line.</span>
-                </span>
               </span>
               <textarea name="tech_groups" rows="4" placeholder="Java | Spring Boot | Kafka | AWS&#10;Java | Spring | Oracle"></textarea>
             </label>
@@ -74,10 +90,6 @@
             <label>
               <span class="label-row">
                 <span>Locations</span>
-                <span class="hint-badge">
-                  Step 4
-                  <span class="hint-tooltip">List the target markets or remote options where you want to discover candidates.</span>
-                </span>
               </span>
               <textarea name="locations" rows="3" placeholder="Ukraine&#10;Poland&#10;Remote"></textarea>
             </label>
@@ -121,10 +133,6 @@
               <legend>
                 <span class="label-row">
                   <span>Search Sources</span>
-                  <span class="hint-badge">
-                    Step 5
-                    <span class="hint-tooltip">Choose the public platforms where the app should look for engineer profiles.</span>
-                  </span>
                 </span>
               </legend>
               <div class="source-options">
@@ -219,6 +227,7 @@
       </main>
     </div>
 
+    <script src="{{ url_for('static', filename='role_presets.js') }}"></script>
     <script src="{{ url_for('static', filename='app.js') }}"></script>
   </body>
 </html>

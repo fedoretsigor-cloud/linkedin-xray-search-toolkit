@@ -144,6 +144,88 @@ h1, h2, h3, h4, p { margin-top: 0; }
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
+.preset-row {
+  grid-template-columns: 1fr;
+  gap: 14px;
+  padding: 12px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(61, 217, 196, 0.13);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(74, 141, 255, 0.08), rgba(61, 217, 196, 0.05)),
+    rgba(255, 255, 255, 0.02);
+}
+.preset-row label {
+  margin-bottom: 0;
+}
+.preset-row .label-row {
+  width: 100%;
+  justify-content: space-between;
+  gap: 6px;
+}
+.preset-row .hint-badge {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+}
+.variant-editor {
+  margin-top: 8px;
+}
+.variant-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 42px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-alt);
+}
+.variant-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(74, 141, 255, 0.14);
+  color: #cfe0ff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.variant-chip button {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  cursor: pointer;
+  line-height: 1;
+}
+.variant-empty {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.variant-add-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: end;
+  margin-top: 8px;
+}
+.compact-btn {
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.field-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
 .source-group {
   border: 1px solid var(--line);
   border-radius: 14px;

@@ -1,6 +1,7 @@
 const state = {
   run: null,
   selectedCandidateId: null,
+  roleVariants: [],
 };
 
 const TAB_ACCESS_KEY = "engineerSearchTabAccess";
@@ -67,6 +68,147 @@ function renderList(items, emptyText) {
     return `<li>${escapeHtml(emptyText)}</li>`;
   }
   return values.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+}
+
+function normalizeVariant(value) {
+  return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+function setRoleVariants(values) {
+  const seen = new Set();
+  state.roleVariants = [];
+  values.forEach((value) => {
+    const variant = normalizeVariant(value);
+    const key = variant.toLowerCase();
+    if (!variant || seen.has(key)) return;
+    seen.add(key);
+    state.roleVariants.push(variant);
+  });
+  renderRoleVariants();
+}
+
+function addRoleVariant(value) {
+  setRoleVariants([...state.roleVariants, value]);
+}
+
+function removeRoleVariant(value) {
+  const target = normalizeVariant(value).toLowerCase();
+  setRoleVariants(state.roleVariants.filter((item) => item.toLowerCase() !== target));
+}
+
+function syncRoleVariantsField() {
+  const field = document.getElementById("role-variants-hidden");
+  if (!field) return;
+  field.value = state.roleVariants.join("\n");
+}
+
+function renderRoleVariants() {
+  const container = document.getElementById("role-variant-chips");
+  if (!container) return;
+  syncRoleVariantsField();
+
+  if (!state.roleVariants.length) {
+    container.innerHTML = `<span class="variant-empty">No variants yet. Presets or manual additions will appear here.</span>`;
+    return;
+  }
+
+  container.innerHTML = state.roleVariants
+    .map(
+      (variant) => `
+        <span class="variant-chip">
+          ${escapeHtml(variant)}
+          <button type="button" aria-label="Remove ${escapeHtml(variant)}" data-variant="${escapeHtml(variant)}">x</button>
+        </span>
+      `,
+    )
+    .join("");
+
+  container.querySelectorAll("button[data-variant]").forEach((button) => {
+    button.addEventListener("click", () => removeRoleVariant(button.dataset.variant));
+  });
+}
+
+function getRolePresetGroups() {
+  return Array.isArray(window.ROLE_PRESETS) ? window.ROLE_PRESETS : [];
+}
+
+function findPreset(groupName, presetName) {
+  const group = getRolePresetGroups().find((item) => item.group === groupName);
+  if (!group) return null;
+  return group.presets.find((preset) => preset.name === presetName) || null;
+}
+
+function populateRoleGroups() {
+  const groupSelect = document.getElementById("role-group-select");
+  if (!groupSelect) return;
+  getRolePresetGroups().forEach((group) => {
+    const option = document.createElement("option");
+    option.value = group.group;
+    option.textContent = group.group;
+    groupSelect.appendChild(option);
+  });
+}
+
+function populateRolePresets(groupName) {
+  const presetSelect = document.getElementById("role-preset-select");
+  if (!presetSelect) return;
+  presetSelect.innerHTML = "";
+
+  const group = getRolePresetGroups().find((item) => item.group === groupName);
+  if (!group) {
+    presetSelect.disabled = true;
+    presetSelect.appendChild(new Option("Select group first", ""));
+    return;
+  }
+
+  presetSelect.disabled = false;
+  presetSelect.appendChild(new Option("Choose a role preset", ""));
+  group.presets.forEach((preset) => {
+    presetSelect.appendChild(new Option(preset.name, preset.name));
+  });
+}
+
+function applyRolePreset(preset) {
+  const form = document.getElementById("search-form");
+  if (!form || !preset) return;
+  form.role.value = preset.role || "";
+  setRoleVariants(preset.variants || []);
+  if (preset.stacks?.length) {
+    form.tech_groups.value = preset.stacks.join("\n");
+  }
+}
+
+function initializeRolePresets() {
+  const groupSelect = document.getElementById("role-group-select");
+  const presetSelect = document.getElementById("role-preset-select");
+  const addButton = document.getElementById("add-role-variant");
+  const variantInput = document.getElementById("role-variant-input");
+
+  populateRoleGroups();
+  populateRolePresets("");
+  renderRoleVariants();
+
+  groupSelect?.addEventListener("change", () => {
+    populateRolePresets(groupSelect.value);
+  });
+
+  presetSelect?.addEventListener("change", () => {
+    const preset = findPreset(groupSelect.value, presetSelect.value);
+    if (preset) applyRolePreset(preset);
+  });
+
+  addButton?.addEventListener("click", () => {
+    addRoleVariant(variantInput.value);
+    variantInput.value = "";
+    variantInput.focus();
+  });
+
+  variantInput?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    addRoleVariant(variantInput.value);
+    variantInput.value = "";
+  });
 }
 
 function redirectToLogin(payload) {
@@ -320,6 +462,7 @@ async function handleSearch(event) {
   const form = event.currentTarget;
   const button = document.getElementById("search-button");
   setFormMessage("");
+  syncRoleVariantsField();
 
   const data = {
     role: form.role.value.trim(),
@@ -386,6 +529,7 @@ if (logoutForm) {
 }
 
 if (enforceTabAccess()) {
+  initializeRolePresets();
   searchForm.addEventListener("submit", handleSearch);
   searchButton.addEventListener("click", () => {
     searchForm.requestSubmit();
