@@ -3,6 +3,9 @@ const state = {
   selectedCandidateId: null,
   roleVariants: [],
   requirementBrief: null,
+  requirementSourceUrl: "",
+  confirmedBrief: null,
+  strategyPreview: null,
 };
 
 const TAB_ACCESS_KEY = "engineerSearchTabAccess";
@@ -406,6 +409,9 @@ function renderRequirementBrief(result) {
 
   const brief = result.brief;
   state.requirementBrief = brief;
+  state.requirementSourceUrl = result.source_url || document.getElementById("requirement-url")?.value.trim() || "";
+  state.confirmedBrief = null;
+  state.strategyPreview = null;
   const mustHave = renderList(brief.must_have_skills, "No must-have skills extracted.");
   const niceToHave = renderList(brief.nice_to_have_skills, "No nice-to-have skills extracted.");
   const questions = renderList(brief.open_questions, "No open questions.");
@@ -442,6 +448,7 @@ function renderRequirementBrief(result) {
       <ul>${questions}</ul>
     </div>
     <button type="button" class="primary-btn apply-brief-btn" id="apply-requirement-brief">Apply to Search Builder</button>
+    <div id="search-strategy-preview" class="strategy-preview hidden"></div>
   `;
 
   document.getElementById("apply-requirement-brief")?.addEventListener("click", applyRequirementBrief);
@@ -460,7 +467,92 @@ function applyRequirementBrief() {
     .map((item) => shortenSearchPhrase(item, 45));
   form.tech_groups.value = stackValues.join(" | ");
   form.locations.value = [shortenSearchPhrase(brief.location || "", 60)].filter(Boolean).join("\n");
-  setRequirementMessage("Brief applied. Please review fields before running search.");
+  state.confirmedBrief = null;
+  setRequirementMessage("Draft applied. Edit fields if needed. Search will use the current fields.");
+  renderSearchStrategyPreview();
+}
+
+function buildConfirmedBriefFromForm() {
+  const form = document.getElementById("search-form");
+  syncRoleVariantsField();
+  return {
+    source_url: state.requirementSourceUrl,
+    original_brief: state.requirementBrief,
+    role: form.role.value.trim(),
+    role_variants: [...state.roleVariants],
+    tech_groups: lines(form.tech_groups.value),
+    locations: lines(form.locations.value),
+    sources: Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value),
+    results_limit: Number(form.num.value),
+  };
+}
+
+function buildStrategyPreviewFromForm() {
+  const form = document.getElementById("search-form");
+  syncRoleVariantsField();
+  const titles = [form.role.value.trim(), ...state.roleVariants].filter(Boolean).map((item) => shortenSearchPhrase(item, 80));
+  const skillGroups = lines(form.tech_groups.value)
+    .flatMap((group) => chunkArray(group.split("|").map((item) => shortenSearchPhrase(item, 45)).filter(Boolean), 3));
+  const locations = lines(form.locations.value).map((item) => shortenSearchPhrase(item, 60));
+  const sources = Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value);
+  const queryCount = Math.max(titles.length, 1) * Math.max(skillGroups.length, 1) * Math.max(locations.length, 1) * Math.max(sources.length, 1);
+  const sampleQueries = [];
+
+  titles.slice(0, 2).forEach((title) => {
+    (skillGroups.length ? skillGroups : [[]]).slice(0, 2).forEach((skills) => {
+      (locations.length ? locations : [""]).slice(0, 1).forEach((location) => {
+        const parts = ['site:linkedin.com/in/'];
+        if (title) parts.push(`"${title}"`);
+        if (skills.length === 1) parts.push(`"${skills[0]}"`);
+        if (skills.length > 1) parts.push(`(${skills.map((skill) => `"${skill}"`).join(" OR ")})`);
+        if (location) parts.push(`"${location}"`);
+        sampleQueries.push(parts.join(" "));
+      });
+    });
+  });
+
+  return {
+    titles,
+    skill_groups: skillGroups,
+    locations,
+    sources,
+    query_count: queryCount,
+    sample_queries: sampleQueries.slice(0, 4),
+  };
+}
+
+function renderSearchStrategyPreview() {
+  const container = document.getElementById("search-strategy-preview");
+  if (!container) return;
+  const strategy = buildStrategyPreviewFromForm();
+  state.strategyPreview = strategy;
+  container.classList.remove("hidden");
+  container.innerHTML = `
+    <div class="requirement-brief-header">
+      <strong>Search strategy preview</strong>
+      <span>${strategy.query_count} base queries</span>
+    </div>
+    <div class="brief-section">
+      <h4>Role titles</h4>
+      <ul>${renderList(strategy.titles, "No titles selected.")}</ul>
+    </div>
+    <div class="brief-section">
+      <h4>Skill query groups</h4>
+      <ul>${renderList(strategy.skill_groups.map((group) => group.join(" | ")), "No skills selected.")}</ul>
+    </div>
+    <div class="brief-section">
+      <h4>Sample queries</h4>
+      <ul>${renderList(strategy.sample_queries, "No query examples.")}</ul>
+    </div>
+  `;
+}
+
+function chunkArray(values, size) {
+  const chunks = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
 }
 
 function shortenSearchPhrase(value, maxLength) {
@@ -622,6 +714,9 @@ async function handleSearch(event) {
     availability: form.availability.value,
     num: Number(form.num.value),
     sources: Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value),
+    requirement_url: state.requirementSourceUrl || document.getElementById("requirement-url")?.value.trim() || "",
+    requirement_brief: state.requirementBrief,
+    confirmed_brief: state.requirementBrief ? buildConfirmedBriefFromForm() : null,
   };
 
   if (!validateEnglishOnly(data)) {

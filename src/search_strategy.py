@@ -75,3 +75,16 @@ def compact_search_input(search_input):
 
 def is_query_within_limit(query, max_length=MAX_TAVILY_QUERY_LENGTH):
     return len(clean_text(query)) <= max_length
+
+
+def summarize_search_strategy(search_input, queries):
+    compacted = compact_search_input(search_input)
+    return {
+        "titles": compacted.get("titles", []),
+        "skill_groups": compacted.get("skill_groups", []),
+        "locations": compacted.get("locations", []),
+        "sources": compacted.get("source_sites", []),
+        "query_count": len(queries),
+        "sample_queries": [item.get("query", "") for item in queries[:5]],
+        "max_query_length": max([len(item.get("query", "")) for item in queries] or [0]),
+    }

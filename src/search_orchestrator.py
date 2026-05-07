@@ -5,6 +5,7 @@ from src.devpost_normalizer import normalize_devpost_rows
 from src.tavily_client import search_tavily
 from src.tavily_normalizer import normalize_tavily_items
 from src.tavily_query_builder import build_tavily_query_variants
+from src.search_strategy import summarize_search_strategy
 
 
 def expand_queries_for_provider(provider, base_queries, requested_count):
@@ -88,6 +89,7 @@ def run_search(
     return {
         "provider": provider,
         "queries": expanded_queries,
+        "search_strategy": summarize_search_strategy(search_input, expanded_queries),
         "rows": rows,
         "duration_seconds": time.time() - started_at,
     }

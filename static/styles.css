@@ -313,6 +313,13 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .apply-brief-btn {
   margin-top: 14px;
 }
+.strategy-preview {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(61, 217, 196, 0.14);
+  background: rgba(61, 217, 196, 0.05);
+}
 .source-group {
   border: 1px solid var(--line);
   border-radius: 14px;

@@ -44,6 +44,9 @@ def build_web_search_request(payload, default_results):
         "experience": clean_text(payload.get("experience", "")),
         "availability": clean_text(payload.get("availability", "")),
         "results_limit": requested_num,
+        "requirement_url": clean_text(payload.get("requirement_url", "")),
+        "requirement_brief": payload.get("requirement_brief") or None,
+        "confirmed_brief": payload.get("confirmed_brief") or None,
     }
 
     validation_values = [
@@ -110,6 +113,10 @@ def build_run_record(search, search_result):
         "id": uuid.uuid4().hex[:10],
         "created_at": datetime.now(timezone.utc).isoformat(),
         "search": search,
+        "requirement_url": search.get("requirement_url", ""),
+        "requirement_brief": search.get("requirement_brief"),
+        "confirmed_brief": search.get("confirmed_brief"),
+        "search_strategy": search_result.get("search_strategy", {}),
         "queries_count": len(search_result["queries"]),
         "duration_seconds": round(search_result["duration_seconds"], 2),
         "candidates": candidates,
