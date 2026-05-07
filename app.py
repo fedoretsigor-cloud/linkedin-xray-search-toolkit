@@ -5,7 +5,16 @@ from dotenv import load_dotenv
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
-from src.search_storage import ensure_storage, load_run, load_run_index, save_run
+from src.search_storage import (
+    create_or_update_project,
+    ensure_project_storage,
+    ensure_storage,
+    load_project,
+    load_project_index,
+    load_run,
+    load_run_index,
+    save_run,
+)
 from src.search_service import run_search
 from src.requirement_agent import analyze_requirement_url
 from src.web_search import build_run_record, build_web_search_request
@@ -15,7 +24,9 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 RUNS_DIR = DATA_DIR / "runs"
+PROJECTS_DIR = DATA_DIR / "projects"
 INDEX_FILE = DATA_DIR / "search_runs.json"
+PROJECT_INDEX_FILE = DATA_DIR / "sourcing_projects.json"
 DEFAULT_SEARCH_RESULTS = int(os.getenv("SEARCH_RESULTS_PER_QUERY", "20"))
 ACCESS_CODE = os.getenv("APP_ACCESS_CODE", "").strip()
 SESSION_SECRET = os.getenv("SESSION_SECRET") or os.getenv("SECRET_KEY") or "local-dev-session-secret"
@@ -118,6 +129,19 @@ def list_searches():
     return jsonify(load_run_index(RUNS_DIR, INDEX_FILE))
 
 
+@app.get("/api/projects")
+def list_projects():
+    return jsonify(load_project_index(PROJECTS_DIR, PROJECT_INDEX_FILE))
+
+
+@app.get("/api/projects/<project_id>")
+def get_project(project_id):
+    project = load_project(PROJECTS_DIR, project_id)
+    if not project:
+        return jsonify({"error": "Sourcing project not found"}), 404
+    return jsonify(project)
+
+
 @app.get("/api/searches/<run_id>")
 def get_search(run_id):
     run = load_run(RUNS_DIR, run_id)
@@ -138,6 +162,8 @@ def create_search():
         return jsonify({"error": f"Search failed: {exc}"}), 500
 
     run_record = build_run_record(search, result)
+    project = create_or_update_project(PROJECTS_DIR, PROJECT_INDEX_FILE, run_record)
+    run_record["project_id"] = project["id"]
     save_run(RUNS_DIR, INDEX_FILE, run_record)
     return jsonify(run_record)
 
@@ -157,6 +183,7 @@ def analyze_requirement():
 
 if __name__ == "__main__":
     ensure_storage(RUNS_DIR, INDEX_FILE)
+    ensure_project_storage(PROJECTS_DIR, PROJECT_INDEX_FILE)
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "0").lower() in {"1", "true", "yes"}

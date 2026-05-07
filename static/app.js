@@ -6,6 +6,7 @@ const state = {
   requirementSourceUrl: "",
   confirmedBrief: null,
   strategyPreview: null,
+  currentProjectId: "",
 };
 
 const TAB_ACCESS_KEY = "engineerSearchTabAccess";
@@ -412,6 +413,7 @@ function renderRequirementBrief(result) {
   state.requirementSourceUrl = result.source_url || document.getElementById("requirement-url")?.value.trim() || "";
   state.confirmedBrief = null;
   state.strategyPreview = null;
+  state.currentProjectId = "";
   const mustHave = renderList(brief.must_have_skills, "No must-have skills extracted.");
   const niceToHave = renderList(brief.nice_to_have_skills, "No nice-to-have skills extracted.");
   const questions = renderList(brief.open_questions, "No open questions.");
@@ -621,8 +623,10 @@ function selectCandidate(candidateId) {
 
 function renderResults(run) {
   state.run = run;
+  state.currentProjectId = run.project_id || state.currentProjectId || "";
   const meta = document.getElementById("results-meta");
-  meta.textContent = `${run.candidates.length} candidates - ${run.queries_count} queries - ${run.duration_seconds}s`;
+  const projectCopy = run.project_id ? ` - project ${run.project_id}` : "";
+  meta.textContent = `${run.candidates.length} candidates - ${run.queries_count} queries - ${run.duration_seconds}s${projectCopy}`;
 
   const empty = document.getElementById("results-state");
   const wrapper = document.getElementById("results-table-wrapper");
@@ -673,7 +677,7 @@ function renderHistory(items) {
     node.className = "history-item";
     node.innerHTML = `
       <strong>${escapeHtml(item.role || "Untitled search")}</strong>
-      <span>${item.candidate_count} candidates - ${item.strong_matches} strong</span>
+      <span>${item.candidate_count} candidates - ${item.strong_matches} strong${item.project_id ? ` - project ${escapeHtml(item.project_id)}` : ""}</span>
     `;
     node.addEventListener("click", async () => {
       const response = await fetch(`/api/searches/${item.id}`);
@@ -714,6 +718,7 @@ async function handleSearch(event) {
     availability: form.availability.value,
     num: Number(form.num.value),
     sources: Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value),
+    project_id: state.currentProjectId || "",
     requirement_url: state.requirementSourceUrl || document.getElementById("requirement-url")?.value.trim() || "",
     requirement_brief: state.requirementBrief,
     confirmed_brief: state.requirementBrief ? buildConfirmedBriefFromForm() : null,

@@ -44,6 +44,7 @@ def build_web_search_request(payload, default_results):
         "experience": clean_text(payload.get("experience", "")),
         "availability": clean_text(payload.get("availability", "")),
         "results_limit": requested_num,
+        "project_id": clean_text(payload.get("project_id", "")),
         "requirement_url": clean_text(payload.get("requirement_url", "")),
         "requirement_brief": payload.get("requirement_brief") or None,
         "confirmed_brief": payload.get("confirmed_brief") or None,
@@ -112,6 +113,7 @@ def build_run_record(search, search_result):
     return {
         "id": uuid.uuid4().hex[:10],
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "project_id": search.get("project_id", ""),
         "search": search,
         "requirement_url": search.get("requirement_url", ""),
         "requirement_brief": search.get("requirement_brief"),
