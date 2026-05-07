@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from src.enrichment import build_candidate_analysis
 from src.scoring import score_candidate
+from src.search_intent import build_search_intent
 from src.text_utils import clean_text
 
 
@@ -65,18 +66,24 @@ def build_web_search_request(payload, default_results):
     if not search["titles"]:
         raise RuntimeError("At least one role/title is required")
 
+    confirmed_brief = search["confirmed_brief"] or {}
+    search_intent = confirmed_brief.get("search_intent") or (build_search_intent(confirmed_brief) if confirmed_brief else {})
+    skill_groups = search_intent.get("skill_groups") or [
+        [part.strip() for part in group.split("|") if part.strip()]
+        for group in search["tech_groups"]
+    ] or [[]]
+
     search_input = {
         "titles": search["titles"],
-        "skill_groups": [
-            [part.strip() for part in group.split("|") if part.strip()]
-            for group in search["tech_groups"]
-        ] or [[]],
+        "skill_groups": skill_groups,
         "locations": search["locations"] or [""],
         "extras": [search["availability"]] if search["availability"] else [],
         "source_sites": search["sources"] or ["linkedin"],
         "num": requested_num,
         "provider": None,
+        "search_intent": search_intent,
     }
+    search["search_intent"] = search_intent
     search["stack_summary"] = ", ".join(search["tech_groups"])
     return search, search_input
 

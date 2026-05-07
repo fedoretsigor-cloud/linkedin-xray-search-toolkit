@@ -455,6 +455,15 @@ a { color: #7fd9ff; }
   padding: 10px 12px;
   resize: vertical;
 }
+.manual-review-block input[type="file"] {
+  width: 100%;
+  margin-top: 8px;
+  background: var(--panel-alt);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
 .compact-action-btn {
   margin-top: 10px;
 }

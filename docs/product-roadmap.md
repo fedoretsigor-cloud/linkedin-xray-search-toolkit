@@ -224,9 +224,15 @@ Remaining work:
 
 ### Phase 6: Resume Review
 
-Status: Not started.
+Status: First slice in progress.
 
-Allow resume upload.
+First slice now supports:
+
+- PDF/DOCX resume upload.
+- Text fallback when upload extraction is not available or the user wants to paste sanitized text.
+- Resume analysis against the confirmed brief, candidate result, and latest profile review.
+- Resume review persistence under the sourcing project.
+- Saved resume reviews load back into the candidate panel.
 
 The human may remove personal data before uploading.
 
@@ -246,6 +252,11 @@ Output:
 - Contradictions between profile and resume.
 - Clarifying questions.
 - Recommended next action.
+
+Remaining work:
+
+- Polish the right-panel layout so profile review and resume review do not feel too heavy.
+- Add a clearer reviewed/resume-reviewed indicator in the candidate table.
 
 ### Phase 7: Decision Memory
 
@@ -458,8 +469,8 @@ Recommended next build order:
 8. Done in MVP: Add sourcing project persistence and project-linked search runs.
 9. Done first slice: Add manual profile review textarea and profile analysis.
 10. Done first slice: Save candidate reviews under the sourcing project.
-11. Next: Load saved candidate reviews when opening historical runs/projects.
-12. Next: Add resume upload and resume analysis.
+11. Done first slice: Load saved candidate reviews when opening historical runs/projects.
+12. In progress: Add PDF/DOCX resume upload and resume analysis.
 13. Later: Add decision memory across profile and resume review.
 14. Later: Add conversational sourcing copilot on top of stable workflow actions.
 15. Backlog: Add candidate communication tracking after the core review workflow is stable.
@@ -492,18 +503,20 @@ Completed:
 - Tavily query compression added to prevent query length errors.
 - Search strategy preview added.
 - Confirmed brief is saved automatically from current fields at search time.
+- Search Intent Builder added so long human requirements become concise searchable anchors.
+- Search progress active-wait UX improved for long-running searches.
 - Sourcing project persistence added.
 - Search runs are linked to sourcing projects.
 - Project API added.
+- Saved candidate reviews load back into the UI.
+- Resume review backend, file extraction, and first UI added.
+- Saved resume reviews load back into the UI.
 
 In progress:
 
-- Manual profile review UX.
-- Loading saved candidate reviews from sourcing projects.
-- Saved candidate review loading in UI.
-- Resume review design.
+- Resume review UX.
 - Frontend simplification so the left panel stays usable as the workflow grows.
 
 Next recommended product step:
 
-- Load saved profile reviews in the UI, then build Resume Review.
+- Test Resume Review with real PDF/DOCX files, then polish the right-panel layout and candidate review status indicators.

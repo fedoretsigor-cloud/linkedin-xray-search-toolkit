@@ -1,4 +1,5 @@
-﻿import os
+﻿import json
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -7,6 +8,7 @@ from flask import Flask, jsonify, redirect, render_template, request, session, u
 
 from src.search_storage import (
     add_candidate_review,
+    add_resume_review,
     create_or_update_project,
     ensure_project_storage,
     ensure_storage,
@@ -19,6 +21,8 @@ from src.search_storage import (
 from src.search_service import run_search
 from src.requirement_agent import analyze_requirement_url
 from src.profile_review_agent import analyze_profile_text
+from src.resume_review_agent import analyze_resume_text
+from src.resume_text_extractor import extract_resume_text
 from src.web_search import build_run_record, build_web_search_request
 
 load_dotenv()
@@ -41,6 +45,7 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "0").lower() in {"1", "true", "yes"}
 app.config["PERMANENT_SESSION_LIFETIME"] = int(os.getenv("SESSION_LIFETIME_SECONDS", "43200"))
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
 EXEMPT_ENDPOINTS = {"login", "login_submit", "static"}
 
@@ -216,6 +221,74 @@ def create_candidate_review(project_id):
     except Exception as exc:
         return jsonify({"error": f"Profile review failed: {exc}"}), 400
     return jsonify(review)
+
+
+@app.post("/api/projects/<project_id>/resume-reviews")
+def create_resume_review(project_id):
+    project = load_project(PROJECTS_DIR, project_id)
+    if not project:
+        return jsonify({"error": "Sourcing project not found"}), 404
+
+    candidate = parse_json_form_field("candidate", {})
+    profile_review = parse_json_form_field("profile_review", None)
+    candidate_id = request.form.get("candidate_id", "")
+    candidate_url = request.form.get("candidate_url", "")
+    resume_text = request.form.get("resume_text", "")
+    resume_filename = ""
+
+    upload = request.files.get("resume_file")
+    try:
+        if upload and upload.filename:
+            extracted = extract_resume_text(upload)
+            resume_text = extracted["text"]
+            resume_filename = extracted["filename"]
+        if profile_review is None:
+            profile_review = find_latest_candidate_review(project, candidate_id, candidate_url)
+        analysis = analyze_resume_text(
+            confirmed_brief=project.get("confirmed_brief") or {},
+            candidate=candidate,
+            profile_review=profile_review or {},
+            resume_text=resume_text,
+        )
+        review = add_resume_review(
+            PROJECTS_DIR,
+            PROJECT_INDEX_FILE,
+            project_id,
+            {
+                "project_id": project_id,
+                "candidate_id": candidate_id,
+                "candidate_name": request.form.get("candidate_name", ""),
+                "candidate_url": candidate_url,
+                "resume_filename": resume_filename,
+                "resume_text": resume_text,
+                "profile_review": profile_review,
+                "analysis": analysis,
+            },
+        )
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Resume review failed: {exc}"}), 400
+    return jsonify(review)
+
+
+def parse_json_form_field(name, default):
+    value = request.form.get(name)
+    if not value:
+        return default
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return default
+
+
+def find_latest_candidate_review(project, candidate_id, candidate_url):
+    for review in project.get("candidate_reviews", []):
+        if candidate_url and review.get("candidate_url") == candidate_url:
+            return review.get("analysis") or review
+        if candidate_id and review.get("candidate_id") == candidate_id:
+            return review.get("analysis") or review
+    return {}
 
 
 if __name__ == "__main__":

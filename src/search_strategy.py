@@ -82,6 +82,7 @@ def summarize_search_strategy(search_input, queries):
     return {
         "titles": compacted.get("titles", []),
         "skill_groups": compacted.get("skill_groups", []),
+        "search_intent": search_input.get("search_intent", {}),
         "locations": compacted.get("locations", []),
         "sources": compacted.get("source_sites", []),
         "query_count": len(queries),

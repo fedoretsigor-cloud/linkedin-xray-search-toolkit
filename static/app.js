@@ -8,10 +8,65 @@ const state = {
   strategyPreview: null,
   currentProjectId: "",
   profileReviews: {},
+  resumeReviews: {},
 };
 
 const TAB_ACCESS_KEY = "engineerSearchTabAccess";
 const TAB_BOOTSTRAP_KEY = "engineerSearchTabBootstrap";
+const SEARCH_INTENT_TERMS = [
+  ["robot framework", "Robot Framework", "language"],
+  ["python", "Python", "language"],
+  ["pytest", "pytest", "language"],
+  ["automotive", "automotive", "domain"],
+  ["embedded", "embedded", "domain"],
+  ["multi-ecu", "multi-ECU", "domain"],
+  ["multi ecu", "multi-ECU", "domain"],
+  ["ecu", "ECU", "domain"],
+  ["adas", "ADAS", "domain"],
+  ["hil", "HiL", "domain"],
+  ["hardware-in-the-loop", "HiL", "domain"],
+  ["sil", "SIL", "domain"],
+  ["software-in-the-loop", "SIL", "domain"],
+  ["can", "CAN", "domain"],
+  ["lin", "LIN", "domain"],
+  ["ethernet", "Ethernet", "domain"],
+  ["git", "Git", "tooling"],
+  ["jfrog", "JFrog", "tooling"],
+  ["artifactory", "Artifactory", "tooling"],
+  ["virtual environment", "virtual environments", "tooling"],
+  ["virtual environments", "virtual environments", "tooling"],
+  ["log analysis", "log analysis", "tooling"],
+  ["analyze logs", "log analysis", "tooling"],
+  ["logs", "logs", "tooling"],
+  ["bdd", "BDD", "methodology"],
+  ["gherkin", "Gherkin", "methodology"],
+  ["keyword-driven", "keyword-driven testing", "methodology"],
+  ["selenium", "Selenium", "language"],
+  ["cypress", "Cypress", "language"],
+  ["playwright", "Playwright", "language"],
+  ["puppeteer", "Puppeteer", "language"],
+  ["typescript", "TypeScript", "language"],
+  ["javascript", "JavaScript", "language"],
+  ["java", "Java", "language"],
+  ["spring boot", "Spring Boot", "tooling"],
+  ["spring", "Spring", "tooling"],
+  ["kafka", "Kafka", "tooling"],
+  ["aws", "AWS", "tooling"],
+];
+
+const GENERIC_SEARCH_PHRASES = new Set([
+  "ability",
+  "ability to",
+  "experience",
+  "experience with",
+  "proven experience",
+  "proven experience developing",
+  "strong communication skills",
+  "technical documentation",
+  "requirements",
+  "development",
+  "testing",
+]);
 
 function lines(value) {
   return value
@@ -306,22 +361,37 @@ function startSearchProgress(data) {
   const expectedDuration = Math.max(9000, 4500 + expectedSteps * 2800 + sourceCount * 1200);
   const startedAt = Date.now();
   const minimumVisibleMs = 1600;
+  const activeWaitMessages = [
+    "Still working. Some public sources answer more slowly than others.",
+    "Search is still running. Keeping the page open is enough.",
+    "Gathering and cleaning results before ranking the shortlist.",
+    "Still alive. Larger query sets can take a little longer.",
+    "Almost there. We are waiting for the final search responses.",
+  ];
 
   const phases = [
     { until: 15, title: "Validating search input", copy: "Checking fields, normalizing keywords, and preparing your request." },
     { until: 35, title: "Building query set", copy: `Preparing up to ${expectedSteps} search passes across ${sourceCount} selected source${sourceCount > 1 ? "s" : ""}.` },
-    { until: 82, title: "Searching public sources", copy: "Scanning public profiles, merging candidate lists, and removing duplicates." },
-    { until: 96, title: "Ranking candidates", copy: "Ranking the strongest matches and preparing the shortlist for review." },
+    { until: 72, title: "Searching public sources", copy: "Scanning public profiles, merging candidate lists, and removing duplicates." },
+    { until: 87, title: "Ranking candidates", copy: "Ranking the strongest matches and preparing the shortlist for review." },
   ];
 
   paintProgress(4, phases[0].title, phases[0].copy);
 
   const timer = window.setInterval(() => {
     const elapsed = Date.now() - startedAt;
-    const ratio = Math.min(elapsed / expectedDuration, 0.94);
-    const percent = 4 + ratio * 90;
+    const ratio = Math.min(elapsed / expectedDuration, 1);
+    const percent = Math.min(87, 4 + ratio * 83);
     const phase = phases.find((item) => percent <= item.until) || phases[phases.length - 1];
-    paintProgress(percent, phase.title, phase.copy);
+    let copy = phase.copy;
+    if (elapsed > 10000) {
+      const waitIndex = Math.floor((elapsed - 10000) / 4500) % activeWaitMessages.length;
+      copy = activeWaitMessages[waitIndex];
+    }
+    if (elapsed > 25000) {
+      copy = "This is a larger search, and it can take 30-60 seconds. The search is still running.";
+    }
+    paintProgress(percent, phase.title, copy);
   }, 220);
 
   return {
@@ -372,6 +442,8 @@ function renderCandidateDetails(candidate) {
   const analysis = candidate.analysis || {};
   const savedReview = getSavedProfileReview(candidate);
   const review = savedReview?.analysis;
+  const savedResumeReview = getSavedResumeReview(candidate);
+  const resumeReview = savedResumeReview?.analysis;
 
   container.className = "details-card";
   container.innerHTML = `
@@ -402,9 +474,22 @@ function renderCandidateDetails(candidate) {
         ${review ? renderProfileReview(review) : ""}
       </div>
     </div>
+    <div class="detail-block manual-review-block">
+      <h4>Resume Review</h4>
+      <p class="field-note">Upload a PDF/DOCX resume or paste text. The agent compares it with the confirmed brief and profile review.</p>
+      <input id="resume-review-file" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+      <textarea id="resume-review-text" rows="7" placeholder="Optional fallback: paste resume text here..."></textarea>
+      <button type="button" class="primary-btn compact-action-btn" id="analyze-resume-button">Analyze Resume</button>
+      <div id="resume-review-message" class="form-message hidden" role="alert"></div>
+      ${savedResumeReview ? `<p class="field-note">Saved resume review: ${escapeHtml(savedResumeReview.created_at || "saved in project")}</p>` : ""}
+      <div id="resume-review-result" class="profile-review-result ${resumeReview ? "" : "hidden"}">
+        ${resumeReview ? renderResumeReview(resumeReview) : ""}
+      </div>
+    </div>
   `;
 
   document.getElementById("analyze-profile-button")?.addEventListener("click", () => handleProfileReview(candidate));
+  document.getElementById("analyze-resume-button")?.addEventListener("click", () => handleResumeReview(candidate));
 }
 
 function profileReviewKeysForCandidate(candidate) {
@@ -429,6 +514,27 @@ function rememberProfileReview(review, candidate = null) {
 
   keys.forEach((key) => {
     state.profileReviews[key] = review;
+  });
+}
+
+function getSavedResumeReview(candidate) {
+  for (const key of profileReviewKeysForCandidate(candidate)) {
+    if (state.resumeReviews[key]) {
+      return state.resumeReviews[key];
+    }
+  }
+  return null;
+}
+
+function rememberResumeReview(review, candidate = null) {
+  const keys = [
+    review?.candidate_url,
+    review?.candidate_id,
+    ...profileReviewKeysForCandidate(candidate),
+  ].filter(Boolean);
+
+  keys.forEach((key) => {
+    state.resumeReviews[key] = review;
   });
 }
 
@@ -458,12 +564,54 @@ function renderProfileReview(review) {
   `;
 }
 
+function renderResumeReview(review) {
+  return `
+    <div class="requirement-brief-header">
+      <strong>${escapeHtml(formatDecision(review.decision))}</strong>
+      <span>${escapeHtml(String(review.score || 0))}%</span>
+    </div>
+    <p>${escapeHtml(review.summary || "No summary returned.")}</p>
+    <div class="brief-section">
+      <h4>Resume evidence</h4>
+      ${renderPlainList(review.resume_evidence, "No resume evidence found.")}
+    </div>
+    <div class="brief-section">
+      <h4>Profile alignment</h4>
+      ${renderPlainList(review.profile_alignment, "No profile alignment found.")}
+    </div>
+    <div class="brief-section">
+      <h4>Contradictions</h4>
+      ${renderPlainList(review.contradictions, "No contradictions found.")}
+    </div>
+    <div class="brief-section">
+      <h4>Questions to ask</h4>
+      ${renderPlainList(review.questions_to_ask, "No questions suggested.")}
+    </div>
+    <div class="brief-section">
+      <h4>Recommended next action</h4>
+      <p>${escapeHtml(review.recommended_next_action || "No next action returned.")}</p>
+    </div>
+  `;
+}
+
 function formatDecision(value) {
   return String(value || "unclear").replaceAll("_", " ");
 }
 
 function setProfileReviewMessage(message) {
   const node = document.getElementById("profile-review-message");
+  if (!node) return;
+  if (!message) {
+    node.textContent = "";
+    node.classList.add("hidden");
+    return;
+  }
+  node.textContent = message;
+  node.classList.remove("hidden");
+}
+
+function setResumeReviewMessage(message) {
+  const node = document.getElementById("resume-review-message");
   if (!node) return;
   if (!message) {
     node.textContent = "";
@@ -525,6 +673,66 @@ async function handleProfileReview(candidate) {
   }
 }
 
+async function handleResumeReview(candidate) {
+  const fileInput = document.getElementById("resume-review-file");
+  const textArea = document.getElementById("resume-review-text");
+  const button = document.getElementById("analyze-resume-button");
+  const resultNode = document.getElementById("resume-review-result");
+  const resumeText = textArea?.value.trim() || "";
+  const resumeFile = fileInput?.files?.[0] || null;
+  const projectId = state.run?.project_id || state.currentProjectId;
+  const savedProfileReview = getSavedProfileReview(candidate);
+  setResumeReviewMessage("");
+
+  if (!projectId) {
+    setResumeReviewMessage("Run a project-linked search before reviewing resumes.");
+    return;
+  }
+  if (!resumeFile && resumeText.length < 80) {
+    setResumeReviewMessage("Upload a PDF/DOCX resume or paste more resume text.");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("candidate_id", candidate.id);
+  formData.append("candidate_name", candidate.name);
+  formData.append("candidate_url", candidate.profile_url || "");
+  formData.append("candidate", JSON.stringify(candidate));
+  formData.append("resume_text", resumeText);
+  if (savedProfileReview?.analysis) {
+    formData.append("profile_review", JSON.stringify(savedProfileReview.analysis));
+  }
+  if (resumeFile) {
+    formData.append("resume_file", resumeFile);
+  }
+
+  button.disabled = true;
+  button.textContent = "Analyzing...";
+  try {
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/resume-reviews`, {
+      method: "POST",
+      body: formData,
+    });
+    const payload = await readJsonResponse(response);
+    if (response.status === 401) {
+      redirectToLogin(payload);
+      return;
+    }
+    if (!response.ok) {
+      throw new Error(payload.error || "Resume review failed");
+    }
+    rememberResumeReview(payload, candidate);
+    resultNode.classList.remove("hidden");
+    resultNode.innerHTML = renderResumeReview(payload.analysis);
+    setResumeReviewMessage("Resume review saved to this sourcing project.");
+  } catch (error) {
+    setResumeReviewMessage(error.message || "Resume review failed.");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Analyze Resume";
+  }
+}
+
 async function loadProjectReviews(projectId) {
   if (!projectId) return;
   try {
@@ -546,8 +754,12 @@ async function loadProjectReviews(projectId) {
 
 function indexProjectReviews(project) {
   state.profileReviews = {};
+  state.resumeReviews = {};
   (project.candidate_reviews || []).forEach((review) => {
     rememberProfileReview(review);
+  });
+  (project.resume_reviews || []).forEach((review) => {
+    rememberResumeReview(review);
   });
 }
 
@@ -633,13 +845,10 @@ function applyRequirementBrief() {
   const brief = state.requirementBrief;
   if (!form || !brief) return;
 
+  const intent = buildSearchIntentFromBrief(brief);
   form.role.value = shortenSearchPhrase(brief.role || "", 80);
   setRoleVariants((brief.role_variants || []).slice(0, 4).map((item) => shortenSearchPhrase(item, 80)));
-
-  const stackValues = [...(brief.must_have_skills || []), ...(brief.nice_to_have_skills || [])]
-    .slice(0, 8)
-    .map((item) => shortenSearchPhrase(item, 45));
-  form.tech_groups.value = stackValues.join(" | ");
+  form.tech_groups.value = intent.skill_groups.map((group) => group.join(" | ")).join("\n");
   form.locations.value = [shortenSearchPhrase(brief.location || "", 60)].filter(Boolean).join("\n");
   state.confirmedBrief = null;
   setRequirementMessage("Draft applied. Edit fields if needed. Search will use the current fields.");
@@ -649,12 +858,14 @@ function applyRequirementBrief() {
 function buildConfirmedBriefFromForm() {
   const form = document.getElementById("search-form");
   syncRoleVariantsField();
+  const searchIntent = buildSearchIntentFromForm(form);
   return {
     source_url: state.requirementSourceUrl,
     original_brief: state.requirementBrief,
     role: form.role.value.trim(),
     role_variants: [...state.roleVariants],
     tech_groups: lines(form.tech_groups.value),
+    search_intent: searchIntent,
     locations: lines(form.locations.value),
     sources: Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value),
     results_limit: Number(form.num.value),
@@ -665,8 +876,10 @@ function buildStrategyPreviewFromForm() {
   const form = document.getElementById("search-form");
   syncRoleVariantsField();
   const titles = [form.role.value.trim(), ...state.roleVariants].filter(Boolean).map((item) => shortenSearchPhrase(item, 80));
-  const skillGroups = lines(form.tech_groups.value)
-    .flatMap((group) => chunkArray(group.split("|").map((item) => shortenSearchPhrase(item, 45)).filter(Boolean), 3));
+  const searchIntent = buildSearchIntentFromForm(form);
+  const skillGroups = searchIntent.skill_groups.length
+    ? searchIntent.skill_groups
+    : lines(form.tech_groups.value).flatMap((group) => chunkArray(group.split("|").map((item) => shortenSearchPhrase(item, 45)).filter(Boolean), 3));
   const locations = lines(form.locations.value).map((item) => shortenSearchPhrase(item, 60));
   const sources = Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value);
   const queryCount = Math.max(titles.length, 1) * Math.max(skillGroups.length, 1) * Math.max(locations.length, 1) * Math.max(sources.length, 1);
@@ -688,6 +901,7 @@ function buildStrategyPreviewFromForm() {
   return {
     titles,
     skill_groups: skillGroups,
+    search_intent: searchIntent,
     locations,
     sources,
     query_count: queryCount,
@@ -711,7 +925,15 @@ function renderSearchStrategyPreview() {
       <ul>${renderList(strategy.titles, "No titles selected.")}</ul>
     </div>
     <div class="brief-section">
-      <h4>Skill query groups</h4>
+      <h4>Must-have search anchors</h4>
+      <ul>${renderList(strategy.search_intent.must_have_keywords, "No must-have anchors selected.")}</ul>
+    </div>
+    <div class="brief-section">
+      <h4>Domain keywords</h4>
+      <ul>${renderList(strategy.search_intent.domain_keywords, "No domain keywords selected.")}</ul>
+    </div>
+    <div class="brief-section">
+      <h4>Query groups</h4>
       <ul>${renderList(strategy.skill_groups.map((group) => group.join(" | ")), "No skills selected.")}</ul>
     </div>
     <div class="brief-section">
@@ -719,6 +941,129 @@ function renderSearchStrategyPreview() {
       <ul>${renderList(strategy.sample_queries, "No query examples.")}</ul>
     </div>
   `;
+}
+
+function buildSearchIntentFromBrief(brief) {
+  const terms = collectSearchIntentTerms([
+    ...(brief.search_keywords || []),
+    ...(brief.must_have_skills || []),
+    ...(brief.nice_to_have_skills || []),
+    brief.domain || "",
+    brief.role || "",
+  ]);
+  return buildSearchIntentPayload({
+    roleTitles: [brief.role || "", ...(brief.role_variants || [])],
+    terms,
+  });
+}
+
+function buildSearchIntentFromForm(form) {
+  const formTerms = lines(form.tech_groups.value).flatMap((group) => group.split("|"));
+  const briefTerms = state.requirementBrief
+    ? collectSearchIntentTerms([
+        ...(state.requirementBrief.search_keywords || []),
+        ...(state.requirementBrief.must_have_skills || []),
+        ...(state.requirementBrief.nice_to_have_skills || []),
+        state.requirementBrief.domain || "",
+      ])
+    : [];
+  const terms = collectSearchIntentTerms([...formTerms, ...briefTerms]);
+  return buildSearchIntentPayload({
+    roleTitles: [form.role.value.trim(), ...state.roleVariants],
+    terms,
+  });
+}
+
+function collectSearchIntentTerms(values) {
+  const terms = [];
+  values.forEach((value) => {
+    const text = cleanSearchPhrase(value);
+    if (!text) return;
+    let matched = false;
+    SEARCH_INTENT_TERMS.forEach(([needle, label, kind]) => {
+      if (termMatches(text, needle)) {
+        terms.push({ label, kind });
+        matched = true;
+      }
+    });
+    const keyword = cleanSearchKeyword(text);
+    if (!matched && keyword && !GENERIC_SEARCH_PHRASES.has(keyword.toLowerCase())) {
+      terms.push({ label: keyword, kind: classifySearchKeyword(keyword) });
+    }
+  });
+  return dedupeIntentTerms(terms);
+}
+
+function termMatches(value, needle) {
+  const normalizedValue = normalizeForSearchIntent(value);
+  const normalizedNeedle = normalizeForSearchIntent(needle);
+  const escaped = normalizedNeedle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`).test(normalizedValue);
+}
+
+function normalizeForSearchIntent(value) {
+  return String(value || "").toLowerCase().replace(/[/-]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function cleanSearchKeyword(value) {
+  const text = cleanSearchPhrase(value);
+  if (!text || text.length > 35 || text.split(/\s+/).length > 4) return "";
+  return text;
+}
+
+function classifySearchKeyword(value) {
+  const match = SEARCH_INTENT_TERMS.find(([needle]) => termMatches(value, needle));
+  return match?.[2] || "other";
+}
+
+function dedupeIntentTerms(terms) {
+  const seen = new Set();
+  return terms.filter((term) => {
+    const key = term.label.toLowerCase();
+    if (!term.label || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildSearchIntentPayload({ roleTitles, terms }) {
+  const byKind = {
+    language: terms.filter((term) => term.kind === "language").map((term) => term.label),
+    domain: terms.filter((term) => term.kind === "domain").map((term) => term.label),
+    tooling: terms.filter((term) => term.kind === "tooling").map((term) => term.label),
+    methodology: terms.filter((term) => term.kind === "methodology").map((term) => term.label),
+    other: terms.filter((term) => term.kind === "other").map((term) => term.label),
+  };
+  const skillGroups = [
+    ...chunkArray(dedupeTextValues(byKind.language).slice(0, 3), 3),
+    ...chunkArray(dedupeTextValues(byKind.domain).slice(0, 4), 3),
+    ...chunkArray(dedupeTextValues([...byKind.tooling, ...byKind.methodology]).slice(0, 6), 3),
+  ].filter((group) => group.length);
+
+  if (!skillGroups.length && byKind.other.length) {
+    skillGroups.push(dedupeTextValues(byKind.other).slice(0, 3));
+  }
+
+  return {
+    role_titles: dedupeTextValues(roleTitles).slice(0, 5),
+    must_have_keywords: dedupeTextValues([...byKind.language, ...byKind.domain]),
+    domain_keywords: dedupeTextValues(byKind.domain),
+    tool_keywords: dedupeTextValues([...byKind.tooling, ...byKind.methodology]),
+    optional_keywords: dedupeTextValues(byKind.other),
+    skill_groups: skillGroups,
+  };
+}
+
+function dedupeTextValues(values) {
+  const seen = new Set();
+  return values
+    .map((value) => cleanSearchPhrase(value))
+    .filter((value) => {
+      const key = value.toLowerCase();
+      if (!value || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function chunkArray(values, size) {
@@ -797,6 +1142,7 @@ function renderResults(run) {
   state.run = run;
   state.currentProjectId = run.project_id || "";
   state.profileReviews = {};
+  state.resumeReviews = {};
   const meta = document.getElementById("results-meta");
   const projectCopy = run.project_id ? ` - project ${run.project_id}` : "";
   meta.textContent = `${run.candidates.length} candidates - ${run.queries_count} queries - ${run.duration_seconds}s${projectCopy}`;

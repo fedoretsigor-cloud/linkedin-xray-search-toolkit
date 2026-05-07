@@ -111,6 +111,7 @@ def create_or_update_project(projects_dir, project_index_file, run_record):
         "created_at": now,
         "search_runs": [],
         "candidate_reviews": [],
+        "resume_reviews": [],
         "communication_events": [],
     }
 
@@ -144,5 +145,20 @@ def add_candidate_review(projects_dir, project_index_file, project_id, review_re
     reviews = [item for item in reviews if item.get("id") != review_record["id"]]
     reviews.insert(0, review_record)
     project["candidate_reviews"] = reviews
+    save_project(projects_dir, project_index_file, project)
+    return review_record
+
+
+def add_resume_review(projects_dir, project_index_file, project_id, review_record):
+    project = load_project(projects_dir, project_id)
+    if not project:
+        raise RuntimeError("Sourcing project not found")
+
+    review_record["id"] = review_record.get("id") or uuid.uuid4().hex[:10]
+    review_record["created_at"] = review_record.get("created_at") or datetime.now(timezone.utc).isoformat()
+    reviews = project.get("resume_reviews", [])
+    reviews = [item for item in reviews if item.get("id") != review_record["id"]]
+    reviews.insert(0, review_record)
+    project["resume_reviews"] = reviews
     save_project(projects_dir, project_index_file, project)
     return review_record
