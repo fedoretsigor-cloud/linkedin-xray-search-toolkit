@@ -38,6 +38,22 @@
           </div>
 
           <form id="search-form" class="builder-form">
+            <section class="requirement-card">
+              <div class="requirement-heading">
+                <div>
+                  <h3>Requirement Intake</h3>
+                  <p>Paste a public hiring requirement URL. The agent will extract the search brief before we run sourcing.</p>
+                </div>
+              </div>
+              <label>
+                Requirement URL
+                <input id="requirement-url" name="requirement_url" type="url" placeholder="https://company.com/careers/job-id">
+              </label>
+              <button type="button" class="ghost-btn requirement-btn" id="analyze-requirement-button">Analyze Requirement</button>
+              <div id="requirement-message" class="form-message hidden" role="alert"></div>
+              <div id="requirement-brief" class="requirement-brief hidden"></div>
+            </section>
+
             <div class="two-col preset-row">
               <label>
                 <span class="label-row">

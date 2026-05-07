@@ -13,6 +13,7 @@ from src.result_quality import is_quality_search_row
 from src.search_clients import search_brave, search_serpapi
 from src.search_normalizer import normalize_brave_items, normalize_serpapi_items
 from src.search_orchestrator import run_search as run_search_pipeline
+from src.search_strategy import compact_search_input, is_query_within_limit
 from src.text_utils import clean_text
 from src.xray_search import build_query
 
@@ -108,17 +109,20 @@ def build_search_input_from_args(args):
 
 def build_queries(search_input):
     queries = []
-    for title in search_input["titles"]:
-        for skill_group in search_input["skill_groups"]:
-            for location in search_input["locations"]:
-                for source_site in search_input["source_sites"]:
+    compacted_input = compact_search_input(search_input)
+    for title in compacted_input["titles"]:
+        for skill_group in compacted_input["skill_groups"]:
+            for location in compacted_input["locations"]:
+                for source_site in compacted_input["source_sites"]:
                     query = build_query(
                         titles=[title] if title else [],
                         skills=skill_group,
                         locations=[location] if location else [],
-                        extras=search_input["extras"],
+                        extras=compacted_input["extras"],
                         site_filter=SITE_FILTERS[source_site],
                     )
+                    if not is_query_within_limit(query):
+                        continue
                     queries.append(
                         {
                             "query": query,
@@ -128,6 +132,8 @@ def build_queries(search_input):
                             "source_site": source_site,
                         }
                     )
+    if not queries:
+        raise RuntimeError("Could not build a Tavily-friendly query under 400 characters. Please shorten role, skills, or location.")
     return queries
 
 

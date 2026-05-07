@@ -2,6 +2,7 @@ const state = {
   run: null,
   selectedCandidateId: null,
   roleVariants: [],
+  requirementBrief: null,
 };
 
 const TAB_ACCESS_KEY = "engineerSearchTabAccess";
@@ -68,6 +69,19 @@ function renderList(items, emptyText) {
     return `<li>${escapeHtml(emptyText)}</li>`;
   }
   return values.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+}
+
+async function readJsonResponse(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    const clean = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    return {
+      error: clean || `Server returned a non-JSON response (${response.status})`,
+    };
+  }
 }
 
 function normalizeVariant(value) {
@@ -369,6 +383,141 @@ function renderCandidateDetails(candidate) {
   `;
 }
 
+function setRequirementMessage(message) {
+  const node = document.getElementById("requirement-message");
+  if (!node) return;
+  if (!message) {
+    node.textContent = "";
+    node.classList.add("hidden");
+    return;
+  }
+  node.textContent = message;
+  node.classList.remove("hidden");
+}
+
+function renderRequirementBrief(result) {
+  const container = document.getElementById("requirement-brief");
+  if (!container) return;
+  if (!result?.brief) {
+    container.classList.add("hidden");
+    container.innerHTML = "";
+    return;
+  }
+
+  const brief = result.brief;
+  state.requirementBrief = brief;
+  const mustHave = renderList(brief.must_have_skills, "No must-have skills extracted.");
+  const niceToHave = renderList(brief.nice_to_have_skills, "No nice-to-have skills extracted.");
+  const questions = renderList(brief.open_questions, "No open questions.");
+  const variants = renderList(brief.role_variants, "No role variants extracted.");
+
+  container.classList.remove("hidden");
+  container.innerHTML = `
+    <div class="requirement-brief-header">
+      <strong>Agent understanding</strong>
+      <span>${escapeHtml(brief.confidence || "low")} confidence</span>
+    </div>
+    <p>${escapeHtml(brief.human_summary || "I extracted a draft sourcing brief.")}</p>
+    <dl class="brief-grid">
+      <div><dt>Role</dt><dd>${escapeHtml(brief.role || "-")}</dd></div>
+      <div><dt>Seniority</dt><dd>${escapeHtml(brief.seniority || "-")}</dd></div>
+      <div><dt>Location</dt><dd>${escapeHtml(brief.location || "-")}</dd></div>
+      <div><dt>Remote</dt><dd>${escapeHtml(brief.remote_policy || "-")}</dd></div>
+      <div><dt>Domain</dt><dd>${escapeHtml(brief.domain || "-")}</dd></div>
+    </dl>
+    <div class="brief-section">
+      <h4>Must-have skills</h4>
+      <ul>${mustHave}</ul>
+    </div>
+    <div class="brief-section">
+      <h4>Nice-to-have skills</h4>
+      <ul>${niceToHave}</ul>
+    </div>
+    <div class="brief-section">
+      <h4>Role variants</h4>
+      <ul>${variants}</ul>
+    </div>
+    <div class="brief-section">
+      <h4>Questions for human confirmation</h4>
+      <ul>${questions}</ul>
+    </div>
+    <button type="button" class="primary-btn apply-brief-btn" id="apply-requirement-brief">Apply to Search Builder</button>
+  `;
+
+  document.getElementById("apply-requirement-brief")?.addEventListener("click", applyRequirementBrief);
+}
+
+function applyRequirementBrief() {
+  const form = document.getElementById("search-form");
+  const brief = state.requirementBrief;
+  if (!form || !brief) return;
+
+  form.role.value = shortenSearchPhrase(brief.role || "", 80);
+  setRoleVariants((brief.role_variants || []).slice(0, 4).map((item) => shortenSearchPhrase(item, 80)));
+
+  const stackValues = [...(brief.must_have_skills || []), ...(brief.nice_to_have_skills || [])]
+    .slice(0, 8)
+    .map((item) => shortenSearchPhrase(item, 45));
+  form.tech_groups.value = stackValues.join(" | ");
+  form.locations.value = [shortenSearchPhrase(brief.location || "", 60)].filter(Boolean).join("\n");
+  setRequirementMessage("Brief applied. Please review fields before running search.");
+}
+
+function shortenSearchPhrase(value, maxLength) {
+  const text = cleanSearchPhrase(value);
+  if (text.length <= maxLength) return text;
+  const separators = ["(", " - ", " | ", " / ", ",", ":"];
+  for (const separator of separators) {
+    if (text.includes(separator)) {
+      const candidate = text.split(separator)[0].trim();
+      if (candidate && candidate.length <= maxLength) return cleanSearchPhrase(candidate);
+    }
+  }
+  return cleanSearchPhrase(text.slice(0, maxLength).replace(/\s+\S*$/, ""));
+}
+
+function cleanSearchPhrase(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").replace(/^[,;:()[\]{}\-\s]+|[,;:()[\]{}\-\s]+$/g, "");
+}
+
+async function handleRequirementAnalysis() {
+  const input = document.getElementById("requirement-url");
+  const button = document.getElementById("analyze-requirement-button");
+  const url = input?.value.trim();
+  setRequirementMessage("");
+
+  if (!url) {
+    setRequirementMessage("Please paste a public requirement URL first.");
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = "Analyzing...";
+  renderRequirementBrief(null);
+
+  try {
+    const response = await fetch("/api/requirements/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    const payload = await readJsonResponse(response);
+    if (response.status === 401) {
+      redirectToLogin(payload);
+      return;
+    }
+    if (!response.ok) {
+      throw new Error(payload.error || "Requirement analysis failed");
+    }
+    renderRequirementBrief(payload);
+  } catch (error) {
+    setRequirementMessage(error.message || "Requirement analysis failed.");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Analyze Requirement";
+  }
+}
+
 function selectCandidate(candidateId) {
   state.selectedCandidateId = candidateId;
   const candidate = state.run?.candidates.find((item) => item.id === candidateId);
@@ -436,7 +585,7 @@ function renderHistory(items) {
     `;
     node.addEventListener("click", async () => {
       const response = await fetch(`/api/searches/${item.id}`);
-      const run = await response.json();
+      const run = await readJsonResponse(response);
       if (response.status === 401) {
         redirectToLogin(run);
         return;
@@ -449,7 +598,7 @@ function renderHistory(items) {
 
 async function loadHistory() {
   const response = await fetch("/api/searches");
-  const items = await response.json();
+  const items = await readJsonResponse(response);
   if (response.status === 401) {
     redirectToLogin(items);
     return;
@@ -494,7 +643,7 @@ async function handleSearch(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    const payload = await response.json();
+    const payload = await readJsonResponse(response);
     if (response.status === 401) {
       progress.fail("Authentication required");
       redirectToLogin(payload);
@@ -519,6 +668,7 @@ async function handleSearch(event) {
 
 const searchForm = document.getElementById("search-form");
 const searchButton = document.getElementById("search-button");
+const analyzeRequirementButton = document.getElementById("analyze-requirement-button");
 const logoutForm = document.querySelector('form[action="/logout"]');
 
 if (logoutForm) {
@@ -534,6 +684,7 @@ if (enforceTabAccess()) {
   searchButton.addEventListener("click", () => {
     searchForm.requestSubmit();
   });
+  analyzeRequirementButton?.addEventListener("click", handleRequirementAnalysis);
 
   loadHistory();
 }

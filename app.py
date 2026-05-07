@@ -7,6 +7,7 @@ from flask import Flask, jsonify, redirect, render_template, request, session, u
 
 from src.search_storage import ensure_storage, load_run, load_run_index, save_run
 from src.search_service import run_search
+from src.requirement_agent import analyze_requirement_url
 from src.web_search import build_run_record, build_web_search_request
 
 load_dotenv()
@@ -133,10 +134,25 @@ def create_search():
         result = run_search(search_input)
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Search failed: {exc}"}), 500
 
     run_record = build_run_record(search, result)
     save_run(RUNS_DIR, INDEX_FILE, run_record)
     return jsonify(run_record)
+
+
+@app.post("/api/requirements/analyze")
+def analyze_requirement():
+    payload = request.get_json(force=True)
+    url = (payload.get("url") or "").strip()
+    try:
+        result = analyze_requirement_url(url)
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Requirement analysis failed: {exc}"}), 400
+    return jsonify(result)
 
 
 if __name__ == "__main__":

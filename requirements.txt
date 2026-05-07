@@ -3,3 +3,4 @@ requests>=2.32.0
 python-certifi-win32>=1.6.1; platform_system == "Windows"
 Flask>=3.1.0
 gunicorn>=23.0.0
+openai>=1.93.0

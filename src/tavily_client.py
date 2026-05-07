@@ -32,7 +32,13 @@ class TavilyClient:
             json=payload,
             timeout=self.timeout,
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            message = response.text.strip()
+            if len(message) > 500:
+                message = message[:500] + "..."
+            raise RuntimeError(f"Tavily search failed ({response.status_code}): {message}") from exc
         return response.json()
 
 

@@ -226,6 +226,93 @@ h1, h2, h3, h4, p { margin-top: 0; }
   font-size: 12px;
   line-height: 1.45;
 }
+.requirement-card {
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid rgba(61, 217, 196, 0.16);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(61, 217, 196, 0.07), rgba(74, 141, 255, 0.06)),
+    rgba(255, 255, 255, 0.02);
+}
+.requirement-heading h3 {
+  margin-bottom: 4px;
+}
+.requirement-heading p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  margin-bottom: 12px;
+}
+.requirement-btn {
+  width: 100%;
+  border-radius: 12px;
+  margin-bottom: 10px;
+}
+.requirement-btn:disabled {
+  opacity: 0.75;
+  cursor: wait;
+}
+.requirement-brief {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(11, 17, 32, 0.42);
+}
+.requirement-brief-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.requirement-brief-header span {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.requirement-brief p,
+.requirement-brief li,
+.requirement-brief dd {
+  color: var(--muted);
+  line-height: 1.45;
+}
+.brief-grid {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+.brief-grid div {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.brief-grid dt {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.brief-grid dd {
+  margin: 3px 0 0;
+  font-size: 13px;
+}
+.brief-section {
+  margin-top: 12px;
+}
+.brief-section h4 {
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.brief-section ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.apply-brief-btn {
+  margin-top: 14px;
+}
 .source-group {
   border: 1px solid var(--line);
   border-radius: 14px;
