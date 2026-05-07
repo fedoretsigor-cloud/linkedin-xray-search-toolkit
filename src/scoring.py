@@ -46,6 +46,7 @@ def score_candidate(candidate, search):
     reasons = []
     risks = []
     source_site = clean_text(candidate.get("source_site", ""))
+    candidate_type = clean_text(candidate.get("candidate_type", ""))
     description = clean_text(candidate.get("short_description", ""))
     description_lower = description.lower()
     role = clean_text(candidate.get("role", ""))
@@ -61,6 +62,13 @@ def score_candidate(candidate, search):
     elif source_site == "facebook":
         score += 8
         reasons.append("Facebook result passed open-to-work filter")
+    elif source_site == "devpost":
+        if candidate_type == "project_maker":
+            score += 10
+            reasons.append("Devpost maker evidence found")
+        else:
+            score -= 20
+            risks.append("Devpost project has no visible maker candidate")
 
     if profile_name:
         score += 5
@@ -117,6 +125,9 @@ def score_candidate(candidate, search):
         reasons.append("Open-to-work signal is visible")
 
     status = "Need review"
+    if source_site == "devpost" and candidate_type != "project_maker":
+        status = "Weak match"
+        score = min(score, 45)
     if score >= 88:
         status = "Strong match"
     elif score >= 74:

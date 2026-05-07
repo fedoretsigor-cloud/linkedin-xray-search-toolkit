@@ -10,6 +10,14 @@ def build_outreach(candidate, search):
     role = search["role"] or "this role"
     stack = search["stack_summary"] or "the requested stack"
     location = ", ".join(search["locations"]) or "the target market"
+    project_title = clean_text(candidate.get("project_title", ""))
+    if candidate.get("source_site") == "devpost" and project_title:
+        return (
+            f"Hi {first_name}, I found your Devpost project {project_title} while searching for "
+            f"{role} talent in {location}. The project looks relevant for {stack}, and I would "
+            f"love to share a role that may fit. If you are open to hearing about opportunities, "
+            f"I can send more details."
+        )
     return (
         f"Hi {first_name}, I found your profile while searching for {role} talent in {location}. "
         f"Your background looks relevant for {stack}, and I would love to share a role that may fit. "
@@ -18,12 +26,21 @@ def build_outreach(candidate, search):
 
 
 def build_candidate_analysis(candidate, search, scoring):
-    return {
-        "summary": (
+    project_title = clean_text(candidate.get("project_title", ""))
+    if candidate.get("source_site") == "devpost" and project_title:
+        summary = (
+            f"{clean_text(candidate.get('profile_name', 'Unknown'))}, "
+            f"maker on Devpost project {project_title}, "
+            f"{extract_location_hint(candidate)}"
+        )
+    else:
+        summary = (
             f"{clean_text(candidate.get('profile_name', 'Unknown'))}, "
             f"{clean_text(candidate.get('role', 'profile result'))}, "
             f"{extract_location_hint(candidate)}"
-        ),
+        )
+    return {
+        "summary": summary,
         "reasons": scoring["reasons"],
         "risks": scoring["risks"],
         "outreach": build_outreach(candidate, search),

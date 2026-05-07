@@ -1,6 +1,7 @@
 import time
 
 from src.dedupe import dedupe_rows
+from src.devpost_normalizer import normalize_devpost_rows
 from src.tavily_client import search_tavily
 from src.tavily_normalizer import normalize_tavily_items
 from src.tavily_query_builder import build_tavily_query_variants
@@ -80,6 +81,7 @@ def run_search(
             raise RuntimeError(f"Unsupported provider: {provider}")
 
         rows = attach_query_context(rows, query_info)
+        rows = normalize_devpost_rows(rows)
         all_rows.extend([row for row in rows if row_filter(row)])
 
     rows = dedupe_rows(all_rows)[:requested_count]
