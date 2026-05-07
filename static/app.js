@@ -370,7 +370,8 @@ function renderCandidateDetails(candidate) {
   }
 
   const analysis = candidate.analysis || {};
-  const review = state.profileReviews[candidate.id]?.analysis;
+  const savedReview = getSavedProfileReview(candidate);
+  const review = savedReview?.analysis;
 
   container.className = "details-card";
   container.innerHTML = `
@@ -396,6 +397,7 @@ function renderCandidateDetails(candidate) {
       <textarea id="profile-review-text" rows="8" placeholder="Paste LinkedIn/profile text here..."></textarea>
       <button type="button" class="primary-btn compact-action-btn" id="analyze-profile-button">Analyze Profile</button>
       <div id="profile-review-message" class="form-message hidden" role="alert"></div>
+      ${savedReview ? `<p class="field-note">Saved review: ${escapeHtml(savedReview.created_at || "saved in project")}</p>` : ""}
       <div id="profile-review-result" class="profile-review-result ${review ? "" : "hidden"}">
         ${review ? renderProfileReview(review) : ""}
       </div>
@@ -403,6 +405,31 @@ function renderCandidateDetails(candidate) {
   `;
 
   document.getElementById("analyze-profile-button")?.addEventListener("click", () => handleProfileReview(candidate));
+}
+
+function profileReviewKeysForCandidate(candidate) {
+  return [candidate?.profile_url, candidate?.id].filter(Boolean);
+}
+
+function getSavedProfileReview(candidate) {
+  for (const key of profileReviewKeysForCandidate(candidate)) {
+    if (state.profileReviews[key]) {
+      return state.profileReviews[key];
+    }
+  }
+  return null;
+}
+
+function rememberProfileReview(review, candidate = null) {
+  const keys = [
+    review?.candidate_url,
+    review?.candidate_id,
+    ...profileReviewKeysForCandidate(candidate),
+  ].filter(Boolean);
+
+  keys.forEach((key) => {
+    state.profileReviews[key] = review;
+  });
 }
 
 function renderProfileReview(review) {
@@ -486,7 +513,7 @@ async function handleProfileReview(candidate) {
     if (!response.ok) {
       throw new Error(payload.error || "Profile review failed");
     }
-    state.profileReviews[candidate.id] = payload;
+    rememberProfileReview(payload, candidate);
     resultNode.classList.remove("hidden");
     resultNode.innerHTML = renderProfileReview(payload.analysis);
     setProfileReviewMessage("Profile review saved to this sourcing project.");
@@ -495,6 +522,40 @@ async function handleProfileReview(candidate) {
   } finally {
     button.disabled = false;
     button.textContent = "Analyze Profile";
+  }
+}
+
+async function loadProjectReviews(projectId) {
+  if (!projectId) return;
+  try {
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`);
+    const project = await readJsonResponse(response);
+    if (response.status === 401) {
+      redirectToLogin(project);
+      return;
+    }
+    if (!response.ok) return;
+    indexProjectReviews(project);
+    if (state.currentProjectId === projectId) {
+      rerenderSelectedCandidate();
+    }
+  } catch {
+    // Saved reviews are helpful, but search results should remain usable if project loading fails.
+  }
+}
+
+function indexProjectReviews(project) {
+  state.profileReviews = {};
+  (project.candidate_reviews || []).forEach((review) => {
+    rememberProfileReview(review);
+  });
+}
+
+function rerenderSelectedCandidate() {
+  if (!state.selectedCandidateId || !state.run?.candidates?.length) return;
+  const candidate = state.run.candidates.find((item) => item.id === state.selectedCandidateId);
+  if (candidate) {
+    renderCandidateDetails(candidate);
   }
 }
 
@@ -734,7 +795,8 @@ function selectCandidate(candidateId) {
 
 function renderResults(run) {
   state.run = run;
-  state.currentProjectId = run.project_id || state.currentProjectId || "";
+  state.currentProjectId = run.project_id || "";
+  state.profileReviews = {};
   const meta = document.getElementById("results-meta");
   const projectCopy = run.project_id ? ` - project ${run.project_id}` : "";
   meta.textContent = `${run.candidates.length} candidates - ${run.queries_count} queries - ${run.duration_seconds}s${projectCopy}`;
@@ -773,6 +835,7 @@ function renderResults(run) {
   });
 
   selectCandidate(run.candidates[0].id);
+  loadProjectReviews(run.project_id);
 }
 
 function renderHistory(items) {

@@ -219,41 +219,10 @@ Remaining work:
 
 - Improve UI layout so profile review does not make the right panel too heavy.
 - Show previously saved reviews when loading historical runs/projects.
-- Connect review decision back to candidate status.
-- Add a clearer candidate workflow state after review.
+- Show saved candidate reviews when loading historical runs/projects.
+- Prepare the review data for resume review and decision memory.
 
-### Phase 6: Candidate Communication Tracker
-
-Status: Not started.
-
-Once the human starts working on a candidate, create a candidate workflow record.
-
-Suggested statuses:
-
-- Found.
-- Profile reviewed.
-- Needs clarification.
-- Message drafted.
-- Contacted.
-- Replied.
-- Waiting for resume.
-- Resume received.
-- Resume reviewed.
-- Shortlisted.
-- Rejected.
-- On hold.
-
-Track:
-
-- Last action.
-- Next action.
-- Communication notes.
-- Candidate questions.
-- Candidate answers.
-- Resume availability.
-- Decision history.
-
-### Phase 7: Resume Review
+### Phase 6: Resume Review
 
 Status: Not started.
 
@@ -266,7 +235,8 @@ The system compares the resume against:
 - Original requirement brief.
 - Confirmed search strategy.
 - Profile analysis.
-- Candidate communication notes.
+- Profile review analysis.
+- Candidate clarification notes when available later.
 
 Output:
 
@@ -277,7 +247,7 @@ Output:
 - Clarifying questions.
 - Recommended next action.
 
-### Phase 8: Decision Memory
+### Phase 7: Decision Memory
 
 Status: Not started.
 
@@ -293,7 +263,7 @@ Store a complete candidate decision trail:
 
 This makes the system useful as a sourcing memory layer, not just a search interface.
 
-### Phase 9: Conversational Sourcing Copilot
+### Phase 8: Conversational Sourcing Copilot
 
 Status: Planned for later.
 
@@ -345,6 +315,39 @@ Implementation guidance:
 - Every agent action should update structured project state.
 - Risky actions should ask for human confirmation.
 - The user should always see what changed after the agent acts.
+
+### Phase 9: Candidate Communication Tracker
+
+Status: Backlog, intentionally moved to the end.
+
+This is valuable, but less critical than profile review, resume review, and decision memory.
+
+Once the core review workflow is stable, create a candidate workflow record.
+
+Suggested statuses:
+
+- Found.
+- Profile reviewed.
+- Needs clarification.
+- Message drafted.
+- Contacted.
+- Replied.
+- Waiting for resume.
+- Resume received.
+- Resume reviewed.
+- Shortlisted.
+- Rejected.
+- On hold.
+
+Track:
+
+- Last action.
+- Next action.
+- Communication notes.
+- Candidate questions.
+- Candidate answers.
+- Resume availability.
+- Decision history.
 
 ## Suggested Data Model
 
@@ -453,11 +456,13 @@ Recommended next build order:
 6. Done in MVP: Add compact search strategy generation for Tavily.
 7. Done in MVP: Store confirmed brief and generated query plan with each search run.
 8. Done in MVP: Add sourcing project persistence and project-linked search runs.
-9. Next: Add manual profile review textarea and profile analysis.
-10. Next: Save candidate reviews under the sourcing project.
-11. Later: Add candidate status tracking.
-12. Later: Add resume upload and resume analysis.
-13. Later: Add conversational sourcing copilot on top of stable workflow actions.
+9. Done first slice: Add manual profile review textarea and profile analysis.
+10. Done first slice: Save candidate reviews under the sourcing project.
+11. Next: Load saved candidate reviews when opening historical runs/projects.
+12. Next: Add resume upload and resume analysis.
+13. Later: Add decision memory across profile and resume review.
+14. Later: Add conversational sourcing copilot on top of stable workflow actions.
+15. Backlog: Add candidate communication tracking after the core review workflow is stable.
 
 ## Current Decision
 
@@ -495,9 +500,10 @@ In progress:
 
 - Manual profile review UX.
 - Loading saved candidate reviews from sourcing projects.
-- Candidate review -> candidate status linkage.
+- Saved candidate review loading in UI.
+- Resume review design.
 - Frontend simplification so the left panel stays usable as the workflow grows.
 
 Next recommended product step:
 
-- Build Manual Profile Review: paste profile text, analyze against confirmed brief, save candidate review to the sourcing project.
+- Load saved profile reviews in the UI, then build Resume Review.
