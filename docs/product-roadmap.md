@@ -24,6 +24,7 @@ The product should not behave like a bot that logs into LinkedIn or scrapes priv
 14. The system analyzes the resume against the requirement and previous profile analysis.
 15. The system updates the candidate decision and next action.
 16. Once a human starts working on a candidate, the system tracks communication and workflow state.
+17. Later, the same workflow can be controlled through a conversational agent interface, where the human talks to the system like a live sourcing copilot.
 
 ## AI Agent Role
 
@@ -42,6 +43,7 @@ The agent should:
 - Compare profile and resume evidence against the requirement.
 - Produce fit decisions, risks, missing evidence, clarifying questions, and outreach drafts.
 - Track candidate workflow state.
+- Eventually communicate with the human through a chat layer that can explain, revise, and trigger the same workflow actions.
 
 The agent should not:
 
@@ -50,10 +52,13 @@ The agent should not:
 - Mass-open profiles as a bot.
 - Extract private or login-gated data.
 - Send messages to candidates without human approval.
+- Hide important state changes inside chat without showing what changed in the structured workflow.
 
 ## Product Phases
 
 ### Phase 1: Requirement Intake
+
+Status: Done in MVP.
 
 Add a requirement URL input.
 
@@ -71,7 +76,18 @@ The system fetches accessible public content from the URL and extracts:
 
 Output: structured requirement brief.
 
+Current implementation:
+
+- Added Requirement Intake UI block.
+- Added public URL fetcher.
+- Added OpenAI-powered requirement extraction.
+- Added structured requirement brief output.
+- Added `OPENAI_API_KEY` / `OPENAI_MODEL` configuration.
+- Added "Apply to Search Builder" action.
+
 ### Phase 2: Human Confirmation
+
+Status: Partially done.
 
 Before running search, show:
 
@@ -86,7 +102,21 @@ Before running search, show:
 
 Search should start only after human confirmation or correction.
 
+Current implementation:
+
+- The system shows an "Agent understanding" card.
+- The human can review the extracted brief before applying it.
+- The current confirmation is still lightweight: applying the brief fills the existing Search Builder.
+
+Remaining work:
+
+- Add a dedicated confirmed brief state.
+- Add explicit "Confirm brief" / "Revise brief" workflow.
+- Store the confirmed brief with the search run or sourcing project.
+
 ### Phase 3: Search Strategy Agent
+
+Status: Partially done.
 
 Generate a search plan from the confirmed brief:
 
@@ -99,7 +129,23 @@ Generate a search plan from the confirmed brief:
 
 The system should explain why it chose the queries.
 
+Current implementation:
+
+- Added search strategy compression.
+- Long requirement briefs are converted into Tavily-friendly query chunks.
+- Skills are split into compact query groups.
+- Query length is kept under Tavily limits.
+- Tavily errors now return readable JSON messages.
+
+Remaining work:
+
+- Show generated query plan in the UI before search.
+- Explain recall vs precision tradeoffs.
+- Allow the human to approve or edit query groups before running search.
+
 ### Phase 4: Candidate Search
+
+Status: Done in MVP, needs sourcing-project upgrade.
 
 Run public source search using the existing search pipeline.
 
@@ -111,7 +157,22 @@ Save each search as a sourcing project or search run:
 - Candidates found.
 - Search source evidence.
 
+Current implementation:
+
+- Tavily public search is wired into the app.
+- Search results are normalized, deduped, scored, and saved as search runs.
+- Hybrid role presets and editable role variants are implemented.
+- Devpost-specific normalization now avoids treating project titles as candidate names.
+
+Remaining work:
+
+- Convert standalone search runs into sourcing projects linked to requirement briefs.
+- Store full query plans and confirmed search strategy.
+- Improve source-specific search behavior per source.
+
 ### Phase 5: Manual Profile Review
+
+Status: Not started.
 
 Add a manual review area for each candidate:
 
@@ -135,6 +196,8 @@ The system analyzes:
 - Suggested outreach message.
 
 ### Phase 6: Candidate Communication Tracker
+
+Status: Not started.
 
 Once the human starts working on a candidate, create a candidate workflow record.
 
@@ -165,6 +228,8 @@ Track:
 
 ### Phase 7: Resume Review
 
+Status: Not started.
+
 Allow resume upload.
 
 The human may remove personal data before uploading.
@@ -187,6 +252,8 @@ Output:
 
 ### Phase 8: Decision Memory
 
+Status: Not started.
+
 Store a complete candidate decision trail:
 
 - Why this candidate was selected.
@@ -198,6 +265,59 @@ Store a complete candidate decision trail:
 - Final recommendation.
 
 This makes the system useful as a sourcing memory layer, not just a search interface.
+
+### Phase 9: Conversational Sourcing Copilot
+
+Status: Planned for later.
+
+Add a chat layer on top of the structured workflow.
+
+The chat should not replace the reliable workflow screens at first. It should call the same backend actions that already exist:
+
+- Analyze requirement URL.
+- Explain extracted requirement brief.
+- Ask human confirmation questions.
+- Revise the brief based on feedback.
+- Build search strategy.
+- Explain query tradeoffs.
+- Run search after confirmation.
+- Summarize candidate results.
+- Explain why a candidate looks strong or weak.
+- Draft candidate outreach.
+- Update candidate status.
+- Prepare next action reminders.
+
+Example interaction:
+
+```text
+Human: Here is the vacancy link.
+Agent: I understood the role as Senior Java Backend Engineer for low-latency trading systems. I have 3 questions before search.
+Human: Location is EU only, low latency is mandatory, Spring is nice-to-have.
+Agent: Updated. I will search for Java Backend Engineer, Low Latency Java Developer, Trading Systems Engineer. Ready to run?
+Human: Run it.
+Agent: Found 40 candidates. 8 have explicit latency/trading evidence. Want to review those first?
+```
+
+The conversational layer needs project memory:
+
+- Current requirement brief.
+- Confirmed search strategy.
+- Last search run.
+- Candidate list.
+- Selected candidate.
+- Candidate status.
+- Profile analysis.
+- Resume analysis.
+- Communication notes.
+
+Implementation guidance:
+
+- Build reliable workflow actions first.
+- Add chat only after actions are stable.
+- Chat messages should never be the only source of truth.
+- Every agent action should update structured project state.
+- Risky actions should ask for human confirmation.
+- The user should always see what changed after the agent acts.
 
 ## Suggested Data Model
 
@@ -246,6 +366,26 @@ This makes the system useful as a sourcing memory layer, not just a search inter
 - `notes`
 - `created_at`
 
+### Agent Conversation
+
+- `id`
+- `project_id`
+- `messages`
+- `active_context`
+- `last_agent_action`
+- `created_at`
+- `updated_at`
+
+### Agent Action
+
+- `conversation_id`
+- `action_type`
+- `input`
+- `output`
+- `requires_confirmation`
+- `confirmed_by_human`
+- `created_at`
+
 ## Compliance And Safety Boundaries
 
 The safe architecture is:
@@ -254,6 +394,7 @@ The safe architecture is:
 Public requirement URL
 -> AI requirement extraction
 -> human confirmation
+-> optional conversational clarification
 -> public search
 -> human manually opens profiles
 -> human pastes profile text
@@ -277,17 +418,51 @@ Logged-in LinkedIn automation
 
 Recommended next build order:
 
-1. Add a `docs/` roadmap and keep this plan as the product source of truth.
-2. Add requirement URL intake and public page fetch.
-3. Add requirement brief extraction.
-4. Add a confirmation screen before search.
-5. Link confirmed brief to the existing search builder.
-6. Add manual profile review textarea.
-7. Add candidate status tracking.
-8. Add resume upload and resume analysis.
+1. Done: Add a `docs/` roadmap and keep this plan as the product source of truth.
+2. Done: Add requirement URL intake and public page fetch.
+3. Done: Add requirement brief extraction.
+4. Partially done: Link extracted brief to the existing search builder.
+5. Partially done: Add compact search strategy generation for Tavily.
+6. Next: Add explicit confirmation screen/state before search.
+7. Next: Store confirmed brief and generated query plan with each search run.
+8. Next: Add manual profile review textarea.
+9. Later: Add candidate status tracking.
+10. Later: Add resume upload and resume analysis.
+11. Later: Add conversational sourcing copilot on top of stable workflow actions.
 
 ## Current Decision
 
 The idea is strong and should be pursued as a staged product.
 
 The immediate next architectural direction is to evolve the current search app into a human-in-the-loop AI sourcing workflow, while keeping LinkedIn interaction manual and safe.
+
+The conversational agent idea is valuable and should remain in the roadmap. It should be implemented as a later interface layer over stable workflow actions, not as an early replacement for structured screens.
+
+## Progress Snapshot
+
+Last updated: 2026-05-07.
+
+Completed:
+
+- Roadmap document created.
+- Tavily client extracted.
+- Tavily query builder extracted.
+- Search pipeline orchestrator added.
+- Dedupe, scoring, enrichment, and Devpost normalization improved.
+- Hybrid role preset Search Builder added.
+- Requirement Intake Agent added.
+- OpenAI API integration added.
+- Public requirement URL fetcher added.
+- Requirement brief extraction added.
+- Apply brief to Search Builder added.
+- Tavily query compression added to prevent query length errors.
+
+In progress:
+
+- Human confirmation between extracted brief and search.
+- Search strategy visibility in UI.
+- Project-level persistence for requirement brief and query plan.
+
+Next recommended product step:
+
+- Build a confirmed brief / search strategy review screen before running search.
