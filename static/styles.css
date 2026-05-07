@@ -445,6 +445,26 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .detail-block p,
 .detail-block li { color: var(--muted); line-height: 1.5; }
 a { color: #7fd9ff; }
+.manual-review-block textarea {
+  width: 100%;
+  margin-top: 8px;
+  background: var(--panel-alt);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+.compact-action-btn {
+  margin-top: 10px;
+}
+.profile-review-result {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(61, 217, 196, 0.14);
+  background: rgba(61, 217, 196, 0.05);
+}
 
 @media (max-width: 1200px) {
   .workspace { grid-template-columns: 1fr; }

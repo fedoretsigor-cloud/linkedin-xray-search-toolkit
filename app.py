@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
 from src.search_storage import (
+    add_candidate_review,
     create_or_update_project,
     ensure_project_storage,
     ensure_storage,
@@ -17,6 +18,7 @@ from src.search_storage import (
 )
 from src.search_service import run_search
 from src.requirement_agent import analyze_requirement_url
+from src.profile_review_agent import analyze_profile_text
 from src.web_search import build_run_record, build_web_search_request
 
 load_dotenv()
@@ -179,6 +181,41 @@ def analyze_requirement():
     except Exception as exc:
         return jsonify({"error": f"Requirement analysis failed: {exc}"}), 400
     return jsonify(result)
+
+
+@app.post("/api/projects/<project_id>/candidate-reviews")
+def create_candidate_review(project_id):
+    payload = request.get_json(force=True)
+    project = load_project(PROJECTS_DIR, project_id)
+    if not project:
+        return jsonify({"error": "Sourcing project not found"}), 404
+
+    profile_text = payload.get("profile_text", "")
+    candidate = payload.get("candidate", {})
+    try:
+        analysis = analyze_profile_text(
+            confirmed_brief=project.get("confirmed_brief") or {},
+            candidate=candidate,
+            profile_text=profile_text,
+        )
+        review = add_candidate_review(
+            PROJECTS_DIR,
+            PROJECT_INDEX_FILE,
+            project_id,
+            {
+                "project_id": project_id,
+                "candidate_id": payload.get("candidate_id", ""),
+                "candidate_name": payload.get("candidate_name", ""),
+                "candidate_url": payload.get("candidate_url", ""),
+                "profile_text": profile_text,
+                "analysis": analysis,
+            },
+        )
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Profile review failed: {exc}"}), 400
+    return jsonify(review)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ const state = {
   confirmedBrief: null,
   strategyPreview: null,
   currentProjectId: "",
+  profileReviews: {},
 };
 
 const TAB_ACCESS_KEY = "engineerSearchTabAccess";
@@ -73,6 +74,10 @@ function renderList(items, emptyText) {
     return `<li>${escapeHtml(emptyText)}</li>`;
   }
   return values.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+}
+
+function renderPlainList(items, emptyText) {
+  return `<ul>${renderList(items, emptyText)}</ul>`;
 }
 
 async function readJsonResponse(response) {
@@ -365,6 +370,7 @@ function renderCandidateDetails(candidate) {
   }
 
   const analysis = candidate.analysis || {};
+  const review = state.profileReviews[candidate.id]?.analysis;
 
   container.className = "details-card";
   container.innerHTML = `
@@ -384,7 +390,112 @@ function renderCandidateDetails(candidate) {
       <h4>Suggested Outreach Message</h4>
       <p>${escapeHtml(analysis.outreach || "No outreach draft available.")}</p>
     </div>
+    <div class="detail-block manual-review-block">
+      <h4>Manual Profile Review</h4>
+      <p class="field-note">Open the profile yourself, paste relevant text here, and let the agent compare it with the confirmed brief.</p>
+      <textarea id="profile-review-text" rows="8" placeholder="Paste LinkedIn/profile text here..."></textarea>
+      <button type="button" class="primary-btn compact-action-btn" id="analyze-profile-button">Analyze Profile</button>
+      <div id="profile-review-message" class="form-message hidden" role="alert"></div>
+      <div id="profile-review-result" class="profile-review-result ${review ? "" : "hidden"}">
+        ${review ? renderProfileReview(review) : ""}
+      </div>
+    </div>
   `;
+
+  document.getElementById("analyze-profile-button")?.addEventListener("click", () => handleProfileReview(candidate));
+}
+
+function renderProfileReview(review) {
+  return `
+    <div class="requirement-brief-header">
+      <strong>${escapeHtml(formatDecision(review.decision))}</strong>
+      <span>${escapeHtml(String(review.score || 0))}%</span>
+    </div>
+    <p>${escapeHtml(review.summary || "No summary returned.")}</p>
+    <div class="brief-section">
+      <h4>Evidence</h4>
+      ${renderPlainList(review.evidence, "No clear evidence found.")}
+    </div>
+    <div class="brief-section">
+      <h4>Risks</h4>
+      ${renderPlainList(review.risks, "No major risks found.")}
+    </div>
+    <div class="brief-section">
+      <h4>Questions to ask</h4>
+      ${renderPlainList(review.questions_to_ask, "No questions suggested.")}
+    </div>
+    <div class="brief-section">
+      <h4>Outreach draft</h4>
+      <p>${escapeHtml(review.outreach_message || "No outreach draft returned.")}</p>
+    </div>
+  `;
+}
+
+function formatDecision(value) {
+  return String(value || "unclear").replaceAll("_", " ");
+}
+
+function setProfileReviewMessage(message) {
+  const node = document.getElementById("profile-review-message");
+  if (!node) return;
+  if (!message) {
+    node.textContent = "";
+    node.classList.add("hidden");
+    return;
+  }
+  node.textContent = message;
+  node.classList.remove("hidden");
+}
+
+async function handleProfileReview(candidate) {
+  const textArea = document.getElementById("profile-review-text");
+  const button = document.getElementById("analyze-profile-button");
+  const resultNode = document.getElementById("profile-review-result");
+  const profileText = textArea?.value.trim() || "";
+  const projectId = state.run?.project_id || state.currentProjectId;
+  setProfileReviewMessage("");
+
+  if (!projectId) {
+    setProfileReviewMessage("Run a project-linked search before reviewing candidates.");
+    return;
+  }
+  if (profileText.length < 80) {
+    setProfileReviewMessage("Paste more profile text before analysis.");
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = "Analyzing...";
+  try {
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/candidate-reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        candidate_id: candidate.id,
+        candidate_name: candidate.name,
+        candidate_url: candidate.profile_url,
+        candidate,
+        profile_text: profileText,
+      }),
+    });
+    const payload = await readJsonResponse(response);
+    if (response.status === 401) {
+      redirectToLogin(payload);
+      return;
+    }
+    if (!response.ok) {
+      throw new Error(payload.error || "Profile review failed");
+    }
+    state.profileReviews[candidate.id] = payload;
+    resultNode.classList.remove("hidden");
+    resultNode.innerHTML = renderProfileReview(payload.analysis);
+    setProfileReviewMessage("Profile review saved to this sourcing project.");
+  } catch (error) {
+    setProfileReviewMessage(error.message || "Profile review failed.");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Analyze Profile";
+  }
 }
 
 function setRequirementMessage(message) {

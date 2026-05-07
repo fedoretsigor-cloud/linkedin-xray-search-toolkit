@@ -87,7 +87,7 @@ Current implementation:
 
 ### Phase 2: Human Confirmation
 
-Status: Partially done.
+Status: Done in MVP, with future revision flow still planned.
 
 Before running search, show:
 
@@ -106,17 +106,19 @@ Current implementation:
 
 - The system shows an "Agent understanding" card.
 - The human can review the extracted brief before applying it.
-- The current confirmation is still lightweight: applying the brief fills the existing Search Builder.
+- Applying the brief fills the existing Search Builder.
+- The human can manually edit Role, Role Variants, Tech Stacks, Locations, Sources, and Results Limit.
+- Running search automatically saves `confirmed_brief` from the current form fields.
+- The run and sourcing project retain both the original extracted brief and the confirmed brief.
 
 Remaining work:
 
-- Add a dedicated confirmed brief state.
-- Add explicit "Confirm brief" / "Revise brief" workflow.
-- Store the confirmed brief with the search run or sourcing project.
+- Add a true revision flow later: human feedback -> revised structured brief.
+- Add clearer UI grouping so the left panel does not become too heavy.
 
 ### Phase 3: Search Strategy Agent
 
-Status: Partially done.
+Status: Done in MVP, with explainability improvements remaining.
 
 Generate a search plan from the confirmed brief:
 
@@ -136,16 +138,19 @@ Current implementation:
 - Skills are split into compact query groups.
 - Query length is kept under Tavily limits.
 - Tavily errors now return readable JSON messages.
+- Search strategy preview is shown before search.
+- The run stores `search_strategy`.
+- The sourcing project stores the latest `search_strategy`.
 
 Remaining work:
 
-- Show generated query plan in the UI before search.
 - Explain recall vs precision tradeoffs.
 - Allow the human to approve or edit query groups before running search.
+- Improve wording: replace "base queries" with a clearer user-facing label and breakdown.
 
 ### Phase 4: Candidate Search
 
-Status: Done in MVP, needs sourcing-project upgrade.
+Status: Done in MVP with sourcing project persistence.
 
 Run public source search using the existing search pipeline.
 
@@ -163,16 +168,22 @@ Current implementation:
 - Search results are normalized, deduped, scored, and saved as search runs.
 - Hybrid role presets and editable role variants are implemented.
 - Devpost-specific normalization now avoids treating project titles as candidate names.
+- Added `project_id`.
+- Added `data/projects/{project_id}.json`.
+- Added `data/sourcing_projects.json`.
+- Added `/api/projects` and `/api/projects/<project_id>`.
+- Search runs are linked to sourcing projects.
+- Repeated searches can attach to the same sourcing project.
 
 Remaining work:
 
-- Convert standalone search runs into sourcing projects linked to requirement briefs.
-- Store full query plans and confirmed search strategy.
 - Improve source-specific search behavior per source.
+- Add a Projects UI so users can browse projects directly, not only search history.
+- Decide whether Render production should use persistent disk/database instead of local JSON for long-term storage.
 
 ### Phase 5: Manual Profile Review
 
-Status: Not started.
+Status: In progress, first vertical slice implemented.
 
 Add a manual review area for each candidate:
 
@@ -194,6 +205,22 @@ The system analyzes:
 - Questions to ask the candidate.
 - Revised fit score.
 - Suggested outreach message.
+
+Current implementation:
+
+- Added Manual Profile Review block to the selected candidate panel.
+- Human can paste profile text manually.
+- Added profile review endpoint under the sourcing project.
+- Added OpenAI-powered profile review agent.
+- Review is saved into `candidate_reviews` on the sourcing project.
+- UI shows decision, score, evidence, risks, questions to ask, and outreach draft.
+
+Remaining work:
+
+- Improve UI layout so profile review does not make the right panel too heavy.
+- Show previously saved reviews when loading historical runs/projects.
+- Connect review decision back to candidate status.
+- Add a clearer candidate workflow state after review.
 
 ### Phase 6: Candidate Communication Tracker
 
@@ -421,14 +448,16 @@ Recommended next build order:
 1. Done: Add a `docs/` roadmap and keep this plan as the product source of truth.
 2. Done: Add requirement URL intake and public page fetch.
 3. Done: Add requirement brief extraction.
-4. Partially done: Link extracted brief to the existing search builder.
-5. Partially done: Add compact search strategy generation for Tavily.
-6. Next: Add explicit confirmation screen/state before search.
-7. Next: Store confirmed brief and generated query plan with each search run.
-8. Next: Add manual profile review textarea.
-9. Later: Add candidate status tracking.
-10. Later: Add resume upload and resume analysis.
-11. Later: Add conversational sourcing copilot on top of stable workflow actions.
+4. Done in MVP: Link extracted brief to the existing search builder.
+5. Done in MVP: Save confirmed brief from current fields at search time.
+6. Done in MVP: Add compact search strategy generation for Tavily.
+7. Done in MVP: Store confirmed brief and generated query plan with each search run.
+8. Done in MVP: Add sourcing project persistence and project-linked search runs.
+9. Next: Add manual profile review textarea and profile analysis.
+10. Next: Save candidate reviews under the sourcing project.
+11. Later: Add candidate status tracking.
+12. Later: Add resume upload and resume analysis.
+13. Later: Add conversational sourcing copilot on top of stable workflow actions.
 
 ## Current Decision
 
@@ -456,13 +485,19 @@ Completed:
 - Requirement brief extraction added.
 - Apply brief to Search Builder added.
 - Tavily query compression added to prevent query length errors.
+- Search strategy preview added.
+- Confirmed brief is saved automatically from current fields at search time.
+- Sourcing project persistence added.
+- Search runs are linked to sourcing projects.
+- Project API added.
 
 In progress:
 
-- Human confirmation between extracted brief and search.
-- Search strategy visibility in UI.
-- Project-level persistence for requirement brief and query plan.
+- Manual profile review UX.
+- Loading saved candidate reviews from sourcing projects.
+- Candidate review -> candidate status linkage.
+- Frontend simplification so the left panel stays usable as the workflow grows.
 
 Next recommended product step:
 
-- Build a confirmed brief / search strategy review screen before running search.
+- Build Manual Profile Review: paste profile text, analyze against confirmed brief, save candidate review to the sourcing project.
