@@ -151,6 +151,11 @@ Current implementation:
 - For example, Java Backend at 200 candidates can expand into groups such as Java/JVM, Spring, Kafka/RabbitMQ, AWS/cloud, microservices, databases, REST/API, Docker/Kubernetes, Hibernate/JPA, and CI/CD.
 - Added the first semantic role pattern layer for common IT role families, starting with QA Automation, Java Backend, Frontend, Fullstack, iOS, Android, DevOps/SRE, Data, ML/AI, and Embedded.
 - Semantic role family selection now uses role/title signals plus extracted requirement/search-intent context.
+- Added an Energy / ETRM Business Analyst semantic family for Front Office, Power Trading, Energy Trading, ETRM/CTRM, Orchestrade, Endur, Openlink, RightAngle, and Allegro signals.
+- Energy / ETRM searches now use grouped-anchor query variants instead of one oversized Boolean query. Example pattern: `"Business Analyst" "Front Office" "Power Trading" "Endur" "houston"`.
+- City/country inputs now search the primary city token, for example `Houston, United States` -> `"houston"`, while strict location validation still uses the full displayed location.
+- Search Strategy Preview now includes search depth, provider list, base query count, provider-pass count, and sample provider queries.
+- Search Depth UI added: Standard, Medium, Extended, and Max.
 - The run stores `search_strategy`.
 - The sourcing project stores the latest `search_strategy`.
 
@@ -159,6 +164,7 @@ Remaining work:
 - Explain recall vs precision tradeoffs.
 - Allow the human to approve or edit query groups before running search.
 - Add adaptive search waves: if a 200-candidate search returns too few unique candidates after dedupe and strict filtering, launch additional different query groups instead of repeating identical queries.
+- Add provider-level explainability: raw results, strict-location filtered results, deduped contribution, and unique candidate lift per provider.
 - Improve query planner clarity further after testing real searches.
 
 ### Phase 4: Candidate Search
@@ -179,6 +185,12 @@ Current implementation:
 
 - Tavily public search is wired into the app.
 - Search results are normalized, deduped, scored, and saved as search runs.
+- Hybrid provider orchestration is now supported. A run can execute the same query set across multiple search providers and dedupe the combined results.
+- Supported provider plumbing now includes Tavily, Bing via SerpApi, Google via SerpApi, Google via Serper, and Brave Search API.
+- Search depth controls provider selection: Standard = Tavily; Medium = Tavily + Bing / SerpApi; Extended = Tavily + Bing / SerpApi + Google / SerpApi; Max = Tavily + Bing / SerpApi + Google / SerpApi + Google / Serper.
+- Provider failures inside a multi-provider run are captured as provider warnings instead of failing the whole search when another provider can still return results.
+- Candidate records now retain the search provider that found them, so the UI can show where a profile came from.
+- `.env.example` documents `SERPAPI_API_KEY`, `BRAVE_SEARCH_API_KEY`, `SERPER_API_KEY`, `TAVILY_API_KEY`, and OpenAI settings.
 - Hybrid role presets and editable role variants are implemented.
 - Query expansion now prefers meaningful family-specific search angles over repeated identical queries or noisy generic boosters.
 - Devpost-specific normalization now avoids treating project titles as candidate names.
@@ -192,6 +204,8 @@ Current implementation:
 Remaining work:
 
 - Improve source-specific search behavior per source.
+- Validate Brave Search API once account/card access is resolved and `BRAVE_SEARCH_API_KEY` is available.
+- Benchmark provider quality across Standard, Medium, Extended, and Max search depths.
 - Add a Projects UI so users can browse projects directly, not only search history.
 - Decide whether Render production should use persistent disk/database instead of local JSON for long-term storage.
 
@@ -485,11 +499,13 @@ Recommended next build order:
 10. Done first slice: Save candidate reviews under the sourcing project.
 11. Done first slice: Load saved candidate reviews when opening historical runs/projects.
 12. In progress: Add PDF/DOCX resume upload and resume analysis.
-13. In progress: Improve search engine recall for large result limits using semantic family query groups.
-14. Next: Add adaptive second/third search waves when a 100/200-candidate search returns too few unique results.
-15. Later: Add decision memory across profile and resume review.
-16. Later: Add conversational sourcing copilot on top of stable workflow actions.
-17. Backlog: Add candidate communication tracking after the core review workflow is stable.
+13. Done first slice: Improve search engine recall for large result limits using semantic family query groups.
+14. Done first slice: Add hybrid provider search with depth controls for Tavily, Bing / SerpApi, Google / SerpApi, and Serper.
+15. Next: Add provider contribution reporting for raw, filtered, deduped, and unique-lift counts.
+16. Next: Add adaptive second/third search waves when a 100/200-candidate search returns too few unique results.
+17. Later: Add decision memory across profile and resume review.
+18. Later: Add conversational sourcing copilot on top of stable workflow actions.
+19. Backlog: Add candidate communication tracking after the core review workflow is stable.
 
 ## Current Decision
 
@@ -503,7 +519,7 @@ Owner search-engine questions are tracked in `docs/questions-from-owner.md` unde
 
 ## Progress Snapshot
 
-Last updated: 2026-05-08.
+Last updated: 2026-05-09.
 
 Completed:
 
@@ -548,15 +564,27 @@ Completed:
 - Saved candidate reviews load back into the UI.
 - Resume review backend, file extraction, and first UI added.
 - Saved resume reviews load back into the UI.
+- Energy / ETRM Business Analyst role family added with grouped Front Office, Power Trading, Energy Trading, ETRM, Orchestrade, and Endur query anchors.
+- Grouped family search now sends smaller, higher-recall queries instead of one oversized Boolean expression.
+- Hybrid search orchestration now supports multiple providers in one run and dedupes across providers.
+- Bing / SerpApi and Google / SerpApi were added as first hybrid search providers.
+- Google / Serper was added as a prepared fourth provider with `SERPER_API_KEY` configuration.
+- Brave Search API remains wired in code and ready for `BRAVE_SEARCH_API_KEY` once account access is resolved.
+- Search Depth UI added with Standard, Medium, Extended, and Max provider presets.
+- Search Strategy Preview now shows provider list, base query count, provider-pass count, and provider-tagged sample queries.
+- Candidate detail UI now shows which search provider found the candidate.
+- Multi-provider search now records provider warnings without failing the whole run when other providers succeed.
+- Server log files are ignored by Git.
 
 In progress:
 
-- Owner-led search-engine review.
-- Strict location filtering and UX validation.
-- High-recall search planning for 100/200-candidate runs.
+- Owner-led search-engine review, including Serper validation and Brave Search billing/access.
+- Strict location filtering and UX validation on real Houston searches.
+- Provider-quality benchmarking across Standard, Medium, Extended, and Max search depths.
+- High-recall search planning for 100/200-candidate runs, including adaptive second/third waves.
 - Resume review UX.
 - Frontend simplification so the left panel stays usable as the workflow grows.
 
 Next recommended product step:
 
-- Validate the new 12-query family expansion on real 200-candidate searches, then design adaptive second/third search waves for cases where dedupe and strict location filtering still return too few candidates.
+- Run side-by-side benchmarks for Standard, Medium, Extended, and Max on the same requirement. Add provider contribution reporting before designing adaptive second/third search waves for cases where dedupe and strict location filtering still return too few candidates.
