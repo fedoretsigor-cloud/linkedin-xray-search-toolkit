@@ -31,7 +31,42 @@
           <div class="panel-header panel-header-action">
             <div>
               <h2>Search Builder</h2>
-		<button type="button" class="primary-btn header-search-btn" id="search-button">Run Search</button>
+              <div class="search-run-controls">
+                <button type="button" class="primary-btn header-search-btn" id="search-button">Run Search</button>
+                <fieldset class="search-depth-control" form="search-form" id="search-depth-select">
+                  <legend>Search Depth</legend>
+                  <div class="depth-options">
+                    <label class="depth-option">
+                      <input type="radio" name="search_depth" value="standard" form="search-form">
+                      <span>
+                        <strong>Standard</strong>
+                        <small>Tavily</small>
+                      </span>
+                    </label>
+                    <label class="depth-option">
+                      <input type="radio" name="search_depth" value="medium" form="search-form">
+                      <span>
+                        <strong>Medium</strong>
+                        <small>Tavily + Bing</small>
+                      </span>
+                    </label>
+                    <label class="depth-option">
+                      <input type="radio" name="search_depth" value="extended" form="search-form" checked>
+                      <span>
+                        <strong>Extended</strong>
+                        <small>Tavily + Bing + Google</small>
+                      </span>
+                    </label>
+                    <label class="depth-option">
+                      <input type="radio" name="search_depth" value="max" form="search-form">
+                      <span>
+                        <strong>Max</strong>
+                        <small>All + Serper</small>
+                      </span>
+                    </label>
+                  </div>
+                </fieldset>
+              </div>
               <div id="search-form-error" class="form-message hidden" role="alert"></div>
               
             </div>

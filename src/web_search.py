@@ -10,6 +10,13 @@ from src.scoring import score_candidate
 from src.search_intent import build_search_intent
 from src.text_utils import clean_text
 
+SEARCH_DEPTH_PROVIDERS = {
+    "standard": ["tavily"],
+    "medium": ["tavily", "bing_serpapi"],
+    "extended": ["tavily", "bing_serpapi", "serpapi"],
+    "max": ["tavily", "bing_serpapi", "serpapi", "serper"],
+}
+
 
 def contains_cyrillic(values):
     pattern = re.compile(r"[\u0400-\u04FF]")
@@ -58,6 +65,13 @@ def sanitize_search_intent(search_intent):
     }
 
 
+def resolve_search_depth_providers(search_depth, providers):
+    cleaned_providers = [clean_text(value).lower() for value in providers or [] if clean_text(value)]
+    if cleaned_providers:
+        return cleaned_providers
+    return SEARCH_DEPTH_PROVIDERS.get(clean_text(search_depth).lower(), SEARCH_DEPTH_PROVIDERS["extended"])
+
+
 def build_web_search_request(payload, default_results):
     requested_num = payload.get("num", default_results)
     try:
@@ -72,6 +86,8 @@ def build_web_search_request(payload, default_results):
         "locations": [clean_text(value) for value in payload.get("locations", []) if clean_text(value)],
         "location_policy": clean_text(payload.get("location_policy", "strict")).lower() or "strict",
         "sources": payload.get("sources", ["linkedin"]),
+        "search_depth": clean_text(payload.get("search_depth", "extended")).lower() or "extended",
+        "providers": resolve_search_depth_providers(payload.get("search_depth", "extended"), payload.get("providers", [])),
         "experience": clean_text(payload.get("experience", "")),
         "availability": clean_text(payload.get("availability", "")),
         "results_limit": requested_num,
@@ -126,12 +142,14 @@ def build_web_search_request(payload, default_results):
         "source_sites": search["sources"] or ["linkedin"],
         "num": requested_num,
         "provider": None,
+        "providers": search["providers"],
         "search_intent": search_intent,
         "role_pattern": role_pattern,
     }
     search["search_intent"] = search_intent
     search["role_pattern"] = role_pattern
     search["stack_summary"] = ", ".join(search["tech_groups"])
+    search["provider_summary"] = ", ".join(search["providers"])
     return search, search_input
 
 
@@ -148,6 +166,7 @@ def transform_candidates(rows, search):
                 "location_match": row.get("location_match", {}),
                 "stack": clean_text(row.get("technology", "")),
                 "source": clean_text(row.get("source_site", "")),
+                "search_provider": clean_text(row.get("search_provider", "")),
                 "status": analysis["status"],
                 "score": analysis["score"],
                 "profile_url": row.get("profile_url", ""),
@@ -174,6 +193,7 @@ def build_run_record(search, search_result):
         "requirement_brief": search.get("requirement_brief"),
         "confirmed_brief": search.get("confirmed_brief"),
         "search_strategy": search_result.get("search_strategy", {}),
+        "provider_errors": search_result.get("provider_errors", []),
         "queries_count": len(search_result["queries"]),
         "duration_seconds": round(search_result["duration_seconds"], 2),
         "candidates": candidates,

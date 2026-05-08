@@ -82,6 +82,11 @@ def summarize_search_strategy(search_input, queries):
     compacted = compact_search_input(search_input)
     titles = compacted.get("titles", [])
     role_pattern = search_input.get("role_pattern") or build_role_pattern(titles[0] if titles else "", titles[1:] if len(titles) > 1 else [])
+    display_locations = dedupe_values(
+        compact_phrase(location, MAX_LOCATION_LENGTH)
+        for location in search_input.get("display_locations", [])
+    )
+    providers = dedupe_values(item.get("provider", "") for item in queries)
     return {
         "titles": titles,
         "primary_role": titles[0] if titles else "",
@@ -93,10 +98,16 @@ def summarize_search_strategy(search_input, queries):
         "role_pattern": role_pattern,
         "skill_groups": compacted.get("skill_groups", []),
         "search_intent": search_input.get("search_intent", {}),
-        "locations": compacted.get("locations", []),
+        "locations": display_locations or compacted.get("locations", []),
+        "query_locations": compacted.get("locations", []),
         "location_policy": search_input.get("location_policy", "strict"),
         "sources": compacted.get("source_sites", []),
+        "providers": providers,
         "query_count": len(queries),
         "sample_queries": [item.get("query", "") for item in queries[:5]],
+        "sample_provider_queries": [
+            {"provider": item.get("provider", ""), "query": item.get("query", "")}
+            for item in queries[:5]
+        ],
         "max_query_length": max([len(item.get("query", "")) for item in queries] or [0]),
     }

@@ -14,6 +14,24 @@ const state = {
 
 const TAB_ACCESS_KEY = "engineerSearchTabAccess";
 const TAB_BOOTSTRAP_KEY = "engineerSearchTabBootstrap";
+const SEARCH_DEPTHS = {
+  standard: {
+    label: "Standard",
+    providers: ["tavily"],
+  },
+  medium: {
+    label: "Medium",
+    providers: ["tavily", "bing_serpapi"],
+  },
+  extended: {
+    label: "Extended",
+    providers: ["tavily", "bing_serpapi", "serpapi"],
+  },
+  max: {
+    label: "Max",
+    providers: ["tavily", "bing_serpapi", "serpapi", "serper"],
+  },
+};
 const SEARCH_INTENT_TERMS = [
   ["robot framework", "Robot Framework", "language"],
   ["python", "Python", "language"],
@@ -322,6 +340,27 @@ function formatTitleCaseValue(value) {
   const text = String(value).trim();
   if (!text) return "-";
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function formatProviderLabel(value) {
+  const key = String(value || "").trim().toLowerCase();
+  const labels = {
+    tavily: "Tavily",
+    bing_serpapi: "Bing / SerpApi",
+    serpapi: "Google / SerpApi",
+    serper: "Google / Serper",
+    brave: "Brave",
+  };
+  return labels[key] || formatTitleCaseValue(key.replaceAll("_", " "));
+}
+
+function getSearchDepthConfig(value) {
+  return SEARCH_DEPTHS[value] || SEARCH_DEPTHS.extended;
+}
+
+function getSelectedSearchDepth(form = document.getElementById("search-form")) {
+  const value = form?.search_depth?.value || document.querySelector('input[name="search_depth"]:checked')?.value;
+  return getSearchDepthConfig(value);
 }
 
 function escapeHtml(value) {
@@ -658,8 +697,9 @@ function hideProgressCard() {
 
 function startSearchProgress(data) {
   const sourceCount = Math.max(data.sources.length, 1);
+  const providerCount = Math.max(data.providers?.length || 1, 1);
   const expectedSteps = getExpectedQueryPasses(data.num);
-  const expectedDuration = Math.max(9000, 4500 + expectedSteps * 2800 + sourceCount * 1200);
+  const expectedDuration = Math.max(9000, 4500 + expectedSteps * 2800 + sourceCount * 1200 + providerCount * 1800);
   const startedAt = Date.now();
   const minimumVisibleMs = 1600;
   const activeWaitMessages = [
@@ -672,7 +712,7 @@ function startSearchProgress(data) {
 
   const phases = [
     { until: 15, title: "Validating search input", copy: "Checking fields, normalizing keywords, and preparing your request." },
-    { until: 35, title: "Building query set", copy: `Preparing up to ${expectedSteps} search passes across ${sourceCount} selected source${sourceCount > 1 ? "s" : ""}.` },
+    { until: 35, title: "Building query set", copy: `Preparing query passes across ${providerCount} search provider${providerCount > 1 ? "s" : ""}.` },
     { until: 72, title: "Searching public sources", copy: "Scanning public profiles, merging candidate lists, and removing duplicates." },
     { until: 87, title: "Ranking candidates", copy: "Ranking the strongest matches and preparing the shortlist for review." },
   ];
@@ -745,6 +785,9 @@ function renderCandidateDetails(candidate) {
   const review = savedReview?.analysis;
   const savedResumeReview = getSavedResumeReview(candidate);
   const resumeReview = savedResumeReview?.analysis;
+  const providerCopy = candidate.search_provider
+    ? `<p class="field-note">Found via ${escapeHtml(formatProviderLabel(candidate.search_provider))}</p>`
+    : "";
 
   container.className = "details-card";
   container.innerHTML = `
@@ -758,6 +801,7 @@ function renderCandidateDetails(candidate) {
     <div class="detail-block">
       <h4>Profile</h4>
       <p><a href="${escapeHtml(candidate.profile_url)}" target="_blank" rel="noreferrer">Open source profile</a></p>
+      ${providerCopy}
       <p>${escapeHtml(candidate.short_description || "No indexed description available.")}</p>
     </div>
     <div class="detail-block">
@@ -1181,6 +1225,7 @@ function buildConfirmedBriefFromForm() {
   const requirementUrl = state.searchMode === "requirement_url"
     ? state.requirementSourceUrl || document.getElementById("requirement-url")?.value.trim() || ""
     : "";
+  const searchDepth = getSelectedSearchDepth(form);
   return {
     source_type: usesRequirement ? "requirement_url" : "manual",
     source_url: requirementUrl,
@@ -1193,6 +1238,8 @@ function buildConfirmedBriefFromForm() {
     locations: lines(form.locations.value),
     location_policy: "strict",
     sources: Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value),
+    search_depth: form.search_depth?.value || "extended",
+    providers: searchDepth.providers,
     results_limit: Number(form.num.value),
   };
 }
@@ -1333,6 +1380,16 @@ function buildGroupedAnchorQueryCount(rolePattern, locations, sources) {
   return variantCount * Math.max(locations.length, 1) * Math.max(sources.length, 1);
 }
 
+function applyProviderDepthToPreview(baseQueries, providers) {
+  const queryGroups = [];
+  baseQueries.forEach((query) => {
+    providers.forEach((provider) => {
+      queryGroups.push({ provider, query });
+    });
+  });
+  return queryGroups;
+}
+
 function buildStrategyPreviewFromForm() {
   const form = document.getElementById("search-form");
   syncRoleVariantsField();
@@ -1346,6 +1403,8 @@ function buildStrategyPreviewFromForm() {
   const displayLocations = lines(form.locations.value).map((item) => shortenSearchPhrase(item, 60));
   const locations = buildLocationQueryValues(displayLocations);
   const sources = Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value);
+  const searchDepthKey = form.search_depth?.value || "extended";
+  const searchDepth = getSearchDepthConfig(searchDepthKey);
   const rolePattern = buildSemanticRolePattern(primaryRole, roleVariants, {
     searchIntent,
     requirementBrief: state.searchMode === "requirement_url" ? state.requirementBrief : null,
@@ -1353,9 +1412,10 @@ function buildStrategyPreviewFromForm() {
   });
   const expandedSkillGroups = expandSkillGroupsForTarget(skillGroups, rolePattern.family, form.num.value);
   const isGroupedAnchorStrategy = rolePattern.queryStrategy === "grouped_anchors";
-  const queryCount = isGroupedAnchorStrategy
+  const baseQueryCount = isGroupedAnchorStrategy
     ? buildGroupedAnchorQueryCount(rolePattern, locations, sources)
     : Math.max(expandedSkillGroups.length, 1) * Math.max(locations.length, 1) * Math.max(sources.length, 1);
+  const queryCount = baseQueryCount * searchDepth.providers.length;
   let sampleQueries = [];
   const titlePattern = rolePattern.titlePattern;
 
@@ -1373,6 +1433,7 @@ function buildStrategyPreviewFromForm() {
       });
     });
   }
+  const providerSampleQueries = applyProviderDepthToPreview(sampleQueries, searchDepth.providers);
 
   return {
     primary_role: primaryRole,
@@ -1389,9 +1450,14 @@ function buildStrategyPreviewFromForm() {
     locations,
     display_locations: displayLocations,
     sources,
+    search_depth: searchDepthKey,
+    search_depth_label: searchDepth.label,
+    providers: searchDepth.providers,
+    base_query_count: baseQueryCount,
     query_count: queryCount,
     location_policy: "strict",
     sample_queries: sampleQueries.slice(0, 5),
+    sample_provider_queries: providerSampleQueries.slice(0, 5),
   };
 }
 
@@ -1443,9 +1509,16 @@ function renderSearchStrategyPreview() {
       <summary>Result limit</summary>
       <ul><li>All planned searches can run; final candidate list is deduped and capped by Results Limit.</li></ul>
     </details>
+    <details class="brief-details" open>
+      <summary>Search depth</summary>
+      <ul>
+        <li>${escapeHtml(strategy.search_depth_label || "Extended")}: ${escapeHtml((strategy.providers || []).map(formatProviderLabel).join(" + ") || "No provider selected.")}</li>
+        <li>Base queries: ${escapeHtml(strategy.base_query_count || strategy.query_count)}; provider passes: ${escapeHtml(strategy.query_count)}.</li>
+      </ul>
+    </details>
     <details class="brief-details">
-      <summary>Sample queries</summary>
-      <ul>${renderList(strategy.sample_queries, "No query examples.")}</ul>
+      <summary>Sample provider queries</summary>
+      <ul>${renderList((strategy.sample_provider_queries || []).map((item) => `[${formatProviderLabel(item.provider)}] ${item.query}`), "No query examples.")}</ul>
     </details>
   `;
 }
@@ -1701,7 +1774,11 @@ function renderResults(run) {
   const meta = document.getElementById("results-meta");
   const projectCopy = run.project_id ? ` - project ${run.project_id}` : "";
   const locationPolicy = run.search_strategy?.location_policy === "strict" ? " - strict location" : "";
-  meta.textContent = `${run.candidates.length} candidates - ${run.queries_count} queries - ${run.duration_seconds}s${locationPolicy}${projectCopy}`;
+  const providers = Array.isArray(run.search_strategy?.providers) ? run.search_strategy.providers : [];
+  const providerCopy = providers.length ? ` - ${providers.map(formatProviderLabel).join(" + ")}` : "";
+  const providerErrors = Array.isArray(run.provider_errors) ? run.provider_errors : [];
+  const warningCopy = providerErrors.length ? ` - ${providerErrors.length} provider warning${providerErrors.length === 1 ? "" : "s"}` : "";
+  meta.textContent = `${run.candidates.length} candidates - ${run.queries_count} queries - ${run.duration_seconds}s${locationPolicy}${providerCopy}${warningCopy}${projectCopy}`;
 
   const empty = document.getElementById("results-state");
   const wrapper = document.getElementById("results-table-wrapper");
@@ -1791,6 +1868,8 @@ async function handleSearch(event) {
     tech_groups: lines(form.tech_groups.value),
     locations: lines(form.locations.value),
     location_policy: "strict",
+    search_depth: form.search_depth?.value || "extended",
+    providers: getSelectedSearchDepth(form).providers,
     experience: form.experience.value,
     availability: form.availability.value,
     num: Number(form.num.value),
@@ -1847,6 +1926,7 @@ async function handleSearch(event) {
 
 const searchForm = document.getElementById("search-form");
 const searchButton = document.getElementById("search-button");
+const searchDepthInputs = Array.from(document.querySelectorAll('input[name="search_depth"]'));
 const analyzeRequirementButton = document.getElementById("analyze-requirement-button");
 const logoutForm = document.querySelector('form[action="/logout"]');
 
@@ -1865,6 +1945,9 @@ if (enforceTabAccess()) {
     refreshStrategyPreviewIfVisible();
   });
   searchForm.addEventListener("change", refreshStrategyPreviewIfVisible);
+  searchDepthInputs.forEach((input) => {
+    input.addEventListener("change", refreshStrategyPreviewIfVisible);
+  });
   searchButton.addEventListener("click", () => {
     searchForm.requestSubmit();
   });

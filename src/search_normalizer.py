@@ -154,6 +154,29 @@ def normalize_serpapi_items(query, payload):
     return normalized
 
 
+def normalize_bing_serpapi_items(query, payload):
+    items = payload.get("organic_results", [])
+    normalized = []
+    for item in items:
+        title = clean_text(item.get("title", ""))
+        link = item.get("link") or item.get("url", "")
+        description = clean_text(item.get("snippet") or item.get("description", ""))
+        linkedin_meta = extract_linkedin_metadata(link)
+        normalized.append(
+            {
+                "search_query": clean_text(query),
+                "profile_name": extract_name(title),
+                "result_title": title,
+                "profile_url": link,
+                "is_linkedin_profile": linkedin_meta["is_profile"],
+                "short_description": description,
+                "location": extract_profile_location(description, extract_name(title)),
+                "result_position": item.get("position", ""),
+            }
+        )
+    return normalized
+
+
 def normalize_brave_items(query, payload):
     items = payload.get("web", {}).get("results", [])
     normalized = []
@@ -172,6 +195,29 @@ def normalize_brave_items(query, payload):
                 "short_description": description,
                 "location": extract_profile_location(description, extract_name(title)),
                 "result_position": "",
+            }
+        )
+    return normalized
+
+
+def normalize_serper_items(query, payload):
+    items = payload.get("organic", [])
+    normalized = []
+    for item in items:
+        title = clean_text(item.get("title", ""))
+        link = item.get("link", "")
+        description = clean_text(item.get("snippet", ""))
+        linkedin_meta = extract_linkedin_metadata(link)
+        normalized.append(
+            {
+                "search_query": clean_text(query),
+                "profile_name": extract_name(title),
+                "result_title": title,
+                "profile_url": link,
+                "is_linkedin_profile": linkedin_meta["is_profile"],
+                "short_description": description,
+                "location": extract_profile_location(description, extract_name(title)),
+                "result_position": item.get("position", ""),
             }
         )
     return normalized

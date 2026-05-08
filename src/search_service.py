@@ -11,9 +11,9 @@ from dotenv import load_dotenv
 from src.facebook_filter import is_facebook_open_to_work_row
 from src.result_quality import is_quality_search_row
 from src.role_pattern_builder import build_role_pattern
-from src.search_clients import search_brave, search_serpapi
-from src.search_normalizer import normalize_brave_items, normalize_serpapi_items
-from src.search_orchestrator import run_search as run_search_pipeline
+from src.search_clients import search_bing_serpapi, search_brave, search_serpapi, search_serper
+from src.search_normalizer import normalize_bing_serpapi_items, normalize_brave_items, normalize_serpapi_items, normalize_serper_items
+from src.search_orchestrator import parse_provider_list, run_search as run_search_pipeline
 from src.search_strategy import compact_search_input, is_query_within_limit
 from src.text_utils import clean_text
 from src.xray_search import build_or_group, build_pattern_query, build_query, build_query_from_title_pattern
@@ -32,12 +32,15 @@ SITE_FILTERS = {
 def load_config():
     load_dotenv()
     provider = os.getenv("SEARCH_PROVIDER", "serpapi").strip().lower()
+    providers = parse_provider_list(os.getenv("SEARCH_PROVIDERS", ""))
     default_num = os.getenv("SEARCH_RESULTS_PER_QUERY", "10").strip()
     return {
         "provider": provider,
+        "providers": providers,
         "default_num": int(default_num),
         "serpapi_api_key": os.getenv("SERPAPI_API_KEY", "").strip(),
         "brave_api_key": os.getenv("BRAVE_SEARCH_API_KEY", "").strip(),
+        "serper_api_key": os.getenv("SERPER_API_KEY", "").strip(),
         "tavily_api_key": os.getenv("TAVILY_API_KEY", "").strip(),
     }
 
@@ -334,7 +337,8 @@ def print_console_progress(current, total, query_info, started_at):
     remaining = average * max(total - current + 1, 0)
     print(f"[{bar}] {current}/{total}")
     print(
-        "Site: {site} | Role: {role} | Tech: {tech} | Location: {location}".format(
+        "Provider: {provider} | Site: {site} | Role: {role} | Tech: {tech} | Location: {location}".format(
+            provider=query_info.get("provider", "-"),
             site=query_info.get("source_site", ""),
             role=query_info.get("title_input", "") or "-",
             tech=query_info.get("skill_input", "") or "-",
@@ -350,9 +354,13 @@ def run_search(search_input, progress_callback=None, config=None):
         config=config or load_config(),
         build_queries=build_queries,
         normalize_serpapi_items=normalize_serpapi_items,
+        normalize_bing_serpapi_items=normalize_bing_serpapi_items,
         normalize_brave_items=normalize_brave_items,
+        normalize_serper_items=normalize_serper_items,
         search_serpapi=search_serpapi,
+        search_bing_serpapi=search_bing_serpapi,
         search_brave=search_brave,
+        search_serper=search_serper,
         row_filter=lambda row: is_facebook_open_to_work_row(row) and is_quality_search_row(row),
         progress_callback=progress_callback,
     )

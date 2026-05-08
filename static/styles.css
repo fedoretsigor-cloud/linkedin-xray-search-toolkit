@@ -115,16 +115,84 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .panel-header-action {
   display: block;
 }
+.search-run-controls {
+  display: grid;
+  gap: 12px;
+  margin: 8px 0 12px;
+}
 .header-search-btn {
   display: inline-flex;
-  width: auto;
-  min-width: 140px;
-  margin: 6px 0 10px;
-  padding: 10px 16px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 16px;
   align-items: center;
   justify-content: center;
   text-align: center;
   white-space: nowrap;
+}
+.search-depth-control {
+  padding: 12px;
+  margin: 0;
+  border: 1px solid rgba(61, 217, 196, 0.14);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top left, rgba(61, 217, 196, 0.12), transparent 34%),
+    rgba(255, 255, 255, 0.025);
+}
+.search-depth-control legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.depth-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+}
+.depth-option {
+  position: relative;
+  display: block;
+  margin: 0;
+  cursor: pointer;
+}
+.depth-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.depth-option span {
+  display: grid;
+  min-height: 68px;
+  align-content: center;
+  gap: 4px;
+  padding: 10px 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(11, 17, 32, 0.46);
+  color: var(--muted);
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+.depth-option strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.depth-option small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.3;
+}
+.depth-option input:checked + span {
+  border-color: rgba(61, 217, 196, 0.82);
+  background:
+    linear-gradient(135deg, rgba(74, 141, 255, 0.18), rgba(61, 217, 196, 0.18)),
+    rgba(23, 32, 54, 0.92);
+  box-shadow: 0 10px 28px rgba(61, 217, 196, 0.12);
+  transform: translateY(-1px);
+}
+.depth-option input:checked + span small {
+  color: #b7f7ee;
 }
 .builder-form label,
 .source-group { display: block; margin-bottom: 14px; }
@@ -602,6 +670,10 @@ a { color: #7fd9ff; }
 @media (max-width: 720px) {
   .panel-header-action {
     display: block;
+  }
+
+  .depth-options {
+    grid-template-columns: 1fr;
   }
 
   .header-search-btn {
