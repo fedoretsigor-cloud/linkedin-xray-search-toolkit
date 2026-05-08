@@ -163,15 +163,15 @@ def create_search():
     try:
         search, search_input = build_web_search_request(payload, DEFAULT_SEARCH_RESULTS)
         result = run_search(search_input)
+        run_record = build_run_record(search, result)
+        project = create_or_update_project(PROJECTS_DIR, PROJECT_INDEX_FILE, run_record)
+        run_record["project_id"] = project["id"]
+        save_run(RUNS_DIR, INDEX_FILE, run_record)
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": f"Search failed: {exc}"}), 500
 
-    run_record = build_run_record(search, result)
-    project = create_or_update_project(PROJECTS_DIR, PROJECT_INDEX_FILE, run_record)
-    run_record["project_id"] = project["id"]
-    save_run(RUNS_DIR, INDEX_FILE, run_record)
     return jsonify(run_record)
 
 

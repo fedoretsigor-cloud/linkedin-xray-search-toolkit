@@ -31,10 +31,24 @@ def normalize_locations(locations):
     return dedupe_values(normalized)
 
 
+def effective_locations(locations):
+    normalized = normalize_locations(locations)
+    has_concrete_location = any(
+        strip_remote_marker(normalize_for_match(location)) for location in normalized
+    )
+    if not has_concrete_location:
+        return normalized
+    return [
+        location
+        for location in normalized
+        if strip_remote_marker(normalize_for_match(location))
+    ]
+
+
 def build_location_terms(locations):
     terms = []
     requires_remote = False
-    for location in normalize_locations(locations):
+    for location in effective_locations(locations):
         normalized = normalize_for_match(location)
         if not normalized:
             continue
@@ -56,7 +70,7 @@ def build_location_terms(locations):
 
 def build_location_query_values(locations):
     values = []
-    for location in normalize_locations(locations):
+    for location in effective_locations(locations):
         normalized = normalize_for_match(location)
         if not normalized:
             continue

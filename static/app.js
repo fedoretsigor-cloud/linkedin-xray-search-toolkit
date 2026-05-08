@@ -7,6 +7,7 @@ const state = {
   confirmedBrief: null,
   strategyPreview: null,
   currentProjectId: "",
+  searchMode: "manual",
   profileReviews: {},
   resumeReviews: {},
 };
@@ -130,6 +131,117 @@ const ROLE_PATTERN_FAMILIES = [
     roleTerms: ["Engineer", "Software Engineer", "Firmware Engineer"],
   },
 ];
+
+const FAMILY_DEFAULT_QUERY_GROUPS = {
+  "Java Backend": [
+    ["Java", "JVM"],
+    ["Spring Boot", "Spring"],
+    ["Kafka", "RabbitMQ", "message broker"],
+    ["AWS", "cloud"],
+    ["microservices", "distributed systems"],
+    ["PostgreSQL", "MySQL", "Oracle"],
+    ["REST", "API", "GraphQL"],
+    ["Docker", "Kubernetes"],
+    ["Hibernate", "JPA"],
+    ["CI/CD", "Jenkins", "GitLab"],
+    ["Redis", "Elasticsearch"],
+    ["SQL", "NoSQL"],
+  ],
+  "QA Automation": [
+    ["Python", "pytest"],
+    ["Selenium", "Playwright", "Cypress"],
+    ["automation framework", "test automation"],
+    ["automotive", "embedded", "ADAS"],
+    ["HiL", "SIL"],
+    ["log analysis", "logs", "virtual environments"],
+    ["Git", "CI/CD"],
+    ["BDD", "Gherkin", "keyword-driven testing"],
+    ["Robot Framework"],
+    ["Puppeteer"],
+    ["Jenkins", "GitLab"],
+    ["API testing", "REST"],
+  ],
+  Frontend: [
+    ["JavaScript", "TypeScript"],
+    ["React", "Next.js"],
+    ["Angular", "Vue"],
+    ["HTML", "CSS"],
+    ["Redux", "state management"],
+    ["frontend architecture"],
+    ["GraphQL", "REST"],
+    ["Jest", "Cypress", "Playwright"],
+  ],
+  Fullstack: [
+    ["JavaScript", "TypeScript"],
+    ["React", "Angular", "Vue"],
+    ["Node.js", "Express"],
+    ["Java", "Spring"],
+    ["Python", "Django", "FastAPI"],
+    ["PostgreSQL", "MySQL", "MongoDB"],
+    ["AWS", "cloud"],
+    ["Docker", "Kubernetes"],
+  ],
+  iOS: [
+    ["Swift", "SwiftUI"],
+    ["iOS", "UIKit"],
+    ["Objective-C"],
+    ["Xcode"],
+    ["Combine", "async await"],
+    ["Core Data"],
+    ["App Store"],
+    ["mobile architecture"],
+  ],
+  Android: [
+    ["Kotlin", "Java"],
+    ["Android", "Jetpack"],
+    ["Compose", "Jetpack Compose"],
+    ["Gradle"],
+    ["Coroutines", "Flow"],
+    ["Android SDK"],
+    ["Google Play"],
+    ["mobile architecture"],
+  ],
+  "DevOps / SRE": [
+    ["Kubernetes", "Docker"],
+    ["AWS", "Azure", "GCP"],
+    ["Terraform", "IaC"],
+    ["CI/CD", "Jenkins", "GitLab"],
+    ["Prometheus", "Grafana"],
+    ["Linux", "Bash"],
+    ["SRE", "observability"],
+    ["Helm", "ArgoCD"],
+  ],
+  "Data Engineer": [
+    ["Python", "SQL"],
+    ["Spark", "Databricks"],
+    ["Airflow", "ETL"],
+    ["Kafka", "streaming"],
+    ["Snowflake", "BigQuery", "Redshift"],
+    ["dbt"],
+    ["AWS", "GCP", "Azure"],
+    ["data pipelines"],
+  ],
+  "ML / AI Engineer": [
+    ["Python", "machine learning"],
+    ["PyTorch", "TensorFlow"],
+    ["LLM", "NLP"],
+    ["MLOps", "model deployment"],
+    ["scikit-learn"],
+    ["computer vision"],
+    ["AWS", "GCP", "Azure"],
+    ["vector search", "embeddings"],
+  ],
+  Embedded: [
+    ["C", "C++"],
+    ["embedded", "firmware"],
+    ["RTOS", "FreeRTOS"],
+    ["microcontroller", "MCU"],
+    ["CAN", "LIN", "Ethernet"],
+    ["automotive", "ADAS"],
+    ["Linux", "Yocto"],
+    ["hardware", "debugging"],
+  ],
+};
 
 function lines(value) {
   return value
@@ -263,15 +375,42 @@ function syncRoleVariantsField() {
   field.value = state.roleVariants.join("\n");
 }
 
+function setSearchMode(mode) {
+  state.searchMode = mode === "requirement_url" ? "requirement_url" : "manual";
+  document.querySelectorAll('input[name="search_mode"]').forEach((input) => {
+    input.checked = input.value === state.searchMode;
+  });
+  const requirementCard = document.getElementById("requirement-card");
+  if (requirementCard) {
+    requirementCard.classList.toggle("hidden", state.searchMode !== "requirement_url");
+  }
+  if (state.searchMode === "manual") {
+    setRequirementMessage("");
+  }
+  refreshStrategyPreviewIfVisible();
+}
+
 function refreshStrategyPreviewIfVisible() {
   const container = document.getElementById("search-strategy-preview");
   if (!container || container.classList.contains("hidden")) return;
   renderSearchStrategyPreview();
 }
 
+function resetSearchStrategyPreview() {
+  const container = document.getElementById("search-strategy-preview");
+  if (container) {
+    container.classList.add("hidden");
+    container.innerHTML = "";
+  }
+  state.strategyPreview = null;
+  renderStrategyPreviewStatus(null);
+}
+
 function showStrategyPreview() {
   renderSearchStrategyPreview();
-  setRequirementMessage("Strategy preview updated. Search will use the current fields.");
+  if (state.searchMode === "requirement_url" && state.requirementBrief) {
+    setRequirementMessage("Search brief updated. Search will use the current fields.");
+  }
 }
 
 function renderStrategyPreviewStatus(strategy) {
@@ -376,10 +515,18 @@ function initializeRolePresets() {
   const addButton = document.getElementById("add-role-variant");
   const variantInput = document.getElementById("role-variant-input");
   const updateStrategyButton = document.getElementById("update-strategy-preview");
+  const modeInputs = Array.from(document.querySelectorAll('input[name="search_mode"]'));
 
   populateRoleGroups();
   populateRolePresets("");
   renderRoleVariants();
+  setSearchMode(state.searchMode);
+
+  modeInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      setSearchMode(input.value);
+    });
+  });
 
   groupSelect?.addEventListener("change", () => {
     populateRolePresets(groupSelect.value);
@@ -912,10 +1059,11 @@ function renderRequirementBrief(result) {
   }
 
   const brief = result.brief;
+  setSearchMode("requirement_url");
   state.requirementBrief = brief;
   state.requirementSourceUrl = result.source_url || document.getElementById("requirement-url")?.value.trim() || "";
   state.confirmedBrief = null;
-  state.strategyPreview = null;
+  resetSearchStrategyPreview();
   state.currentProjectId = "";
   const intent = buildSearchIntentFromBrief(brief);
   const mustHaveAnchors = renderAnchorChips(
@@ -968,7 +1116,6 @@ function renderRequirementBrief(result) {
       <ul>${questions}</ul>
     </details>
     <button type="button" class="primary-btn apply-brief-btn" id="apply-requirement-brief">Apply to Search Builder</button>
-    <div id="search-strategy-preview" class="strategy-preview hidden"></div>
   `;
 
   document.getElementById("apply-requirement-brief")?.addEventListener("click", applyRequirementBrief);
@@ -992,14 +1139,22 @@ function applyRequirementBrief() {
 function buildConfirmedBriefFromForm() {
   const form = document.getElementById("search-form");
   syncRoleVariantsField();
-  const searchIntent = buildSearchIntentFromForm(form);
+  const strategyPreview = buildStrategyPreviewFromForm();
+  state.strategyPreview = strategyPreview;
+  const searchIntent = strategyPreview.search_intent || buildSearchIntentFromForm(form);
+  const usesRequirement = state.searchMode === "requirement_url" && Boolean(state.requirementBrief);
+  const requirementUrl = state.searchMode === "requirement_url"
+    ? state.requirementSourceUrl || document.getElementById("requirement-url")?.value.trim() || ""
+    : "";
   return {
-    source_url: state.requirementSourceUrl,
-    original_brief: state.requirementBrief,
+    source_type: usesRequirement ? "requirement_url" : "manual",
+    source_url: requirementUrl,
+    original_brief: usesRequirement ? state.requirementBrief : null,
     role: form.role.value.trim(),
     role_variants: [...state.roleVariants],
     tech_groups: lines(form.tech_groups.value),
     search_intent: searchIntent,
+    search_strategy: strategyPreview,
     locations: lines(form.locations.value),
     location_policy: "strict",
     sources: Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value),
@@ -1070,7 +1225,7 @@ function buildSemanticRolePattern(primaryRole, roleVariants, context = null) {
 }
 
 function buildLocationQueryValues(locations) {
-  return dedupeTextValues(
+  const values = dedupeTextValues(
     locations.map((location) => {
       const normalized = cleanSearchPhrase(location).toLowerCase().replaceAll("-", " ").replaceAll("/", " ");
       const stripped = normalized
@@ -1085,6 +1240,8 @@ function buildLocationQueryValues(locations) {
       return /\b(remote|remotely|remote work|work from home|wfh)\b/.test(normalized) ? "remote" : normalized;
     })
   ).filter(Boolean);
+  const hasConcreteLocation = values.some((value) => value.toLowerCase() !== "remote");
+  return hasConcreteLocation ? values.filter((value) => value.toLowerCase() !== "remote") : values;
 }
 
 function buildStrategyPreviewFromForm() {
@@ -1100,16 +1257,17 @@ function buildStrategyPreviewFromForm() {
   const displayLocations = lines(form.locations.value).map((item) => shortenSearchPhrase(item, 60));
   const locations = buildLocationQueryValues(displayLocations);
   const sources = Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value);
-  const queryCount = Math.max(skillGroups.length, 1) * Math.max(locations.length, 1) * Math.max(sources.length, 1);
-  const sampleQueries = [];
   const rolePattern = buildSemanticRolePattern(primaryRole, roleVariants, {
     searchIntent,
-    requirementBrief: state.requirementBrief,
+    requirementBrief: state.searchMode === "requirement_url" ? state.requirementBrief : null,
     techGroups: lines(form.tech_groups.value),
   });
+  const expandedSkillGroups = expandSkillGroupsForTarget(skillGroups, rolePattern.family, form.num.value);
+  const queryCount = Math.max(expandedSkillGroups.length, 1) * Math.max(locations.length, 1) * Math.max(sources.length, 1);
+  const sampleQueries = [];
   const titlePattern = rolePattern.titlePattern;
 
-  (skillGroups.length ? skillGroups : [[]]).slice(0, 3).forEach((skills) => {
+  (expandedSkillGroups.length ? expandedSkillGroups : [[]]).slice(0, 5).forEach((skills) => {
     (locations.length ? locations : [""]).slice(0, 1).forEach((location) => {
       const parts = ['site:linkedin.com/in/'];
       if (titlePattern) parts.push(titlePattern);
@@ -1128,14 +1286,15 @@ function buildStrategyPreviewFromForm() {
     role_pattern_mode: rolePattern.mode,
     role_pattern_confidence: rolePattern.confidence,
     titles,
-    skill_groups: skillGroups,
+    skill_groups: expandedSkillGroups,
+    original_skill_groups: skillGroups,
     search_intent: searchIntent,
     locations,
     display_locations: displayLocations,
     sources,
     query_count: queryCount,
     location_policy: "strict",
-    sample_queries: sampleQueries.slice(0, 4),
+    sample_queries: sampleQueries.slice(0, 5),
   };
 }
 
@@ -1325,6 +1484,51 @@ function chunkArray(values, size) {
   return chunks;
 }
 
+function desiredQueryGroupCount(targetCount) {
+  const limit = Number(targetCount) || 20;
+  if (limit <= 20) return 3;
+  if (limit <= 40) return 4;
+  if (limit <= 60) return 5;
+  if (limit <= 100) return 8;
+  return 12;
+}
+
+function groupKey(group) {
+  return group.map((value) => cleanSearchPhrase(value).toLowerCase()).filter(Boolean).sort().join("|");
+}
+
+function addQueryGroup(groups, group) {
+  const cleaned = dedupeTextValues(group || []);
+  if (!cleaned.length) {
+    if (!groups.length) groups.push([]);
+    return;
+  }
+  const key = groupKey(cleaned);
+  if (groups.some((existing) => groupKey(existing) === key)) return;
+  if (isSubsetOfExistingGroup(cleaned, groups)) return;
+  groups.push(cleaned);
+}
+
+function isSubsetOfExistingGroup(group, groups) {
+  const newTerms = new Set(group.map((value) => cleanSearchPhrase(value).toLowerCase()).filter(Boolean));
+  if (!newTerms.size) return false;
+  return groups.some((existing) => {
+    const existingTerms = new Set(existing.map((value) => cleanSearchPhrase(value).toLowerCase()).filter(Boolean));
+    return Array.from(newTerms).every((term) => existingTerms.has(term));
+  });
+}
+
+function expandSkillGroupsForTarget(skillGroups, rolePatternFamily, targetCount) {
+  const desiredCount = desiredQueryGroupCount(targetCount);
+  const expanded = [];
+  (skillGroups || [[]]).forEach((group) => addQueryGroup(expanded, group));
+  (FAMILY_DEFAULT_QUERY_GROUPS[rolePatternFamily] || []).forEach((group) => {
+    if (expanded.length >= desiredCount) return;
+    addQueryGroup(expanded, group);
+  });
+  return (expanded.length ? expanded : [[]]).slice(0, desiredCount);
+}
+
 function shortenSearchPhrase(value, maxLength) {
   const text = cleanSearchPhrase(value);
   if (text.length <= maxLength) return text;
@@ -1492,9 +1696,11 @@ async function handleSearch(event) {
     num: Number(form.num.value),
     sources: Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value),
     project_id: state.currentProjectId || "",
-    requirement_url: state.requirementSourceUrl || document.getElementById("requirement-url")?.value.trim() || "",
-    requirement_brief: state.requirementBrief,
-    confirmed_brief: state.requirementBrief ? buildConfirmedBriefFromForm() : null,
+    requirement_url: state.searchMode === "requirement_url"
+      ? state.requirementSourceUrl || document.getElementById("requirement-url")?.value.trim() || ""
+      : "",
+    requirement_brief: state.searchMode === "requirement_url" ? state.requirementBrief : null,
+    confirmed_brief: buildConfirmedBriefFromForm(),
   };
 
   if (!validateEnglishOnly(data)) {

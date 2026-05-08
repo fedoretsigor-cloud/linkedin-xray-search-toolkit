@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from src.enrichment import build_candidate_analysis
 from src.location_policy import build_location_query_values
+from src.query_group_expander import expand_skill_groups
 from src.role_pattern_builder import build_role_pattern
 from src.scoring import score_candidate
 from src.search_intent import build_search_intent
@@ -85,6 +86,7 @@ def build_web_search_request(payload, default_results):
             "tech_groups": search["tech_groups"],
         },
     )
+    skill_groups = expand_skill_groups(skill_groups, role_pattern, requested_num)
 
     search_input = {
         "titles": search["titles"],

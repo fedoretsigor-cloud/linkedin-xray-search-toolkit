@@ -38,7 +38,32 @@
           </div>
 
           <form id="search-form" class="builder-form">
-            <section class="requirement-card">
+            <section class="mode-card">
+              <div class="requirement-heading">
+                <div>
+                  <h3>Search mode</h3>
+                  <p>Choose how we start. You can still edit the fields before running search.</p>
+                </div>
+              </div>
+              <div class="search-mode-toggle" role="radiogroup" aria-label="Search mode">
+                <label class="mode-option">
+                  <input type="radio" name="search_mode" value="manual" checked>
+                  <span>
+                    <strong>Manual search</strong>
+                    <small>Fill role, signals, stack, and location yourself.</small>
+                  </span>
+                </label>
+                <label class="mode-option">
+                  <input type="radio" name="search_mode" value="requirement_url">
+                  <span>
+                    <strong>From vacancy URL</strong>
+                    <small>Analyze a public job page first.</small>
+                  </span>
+                </label>
+              </div>
+            </section>
+
+            <section class="requirement-card hidden" id="requirement-card">
               <div class="requirement-heading">
                 <div>
                   <h3>Requirement Intake</h3>
@@ -93,8 +118,6 @@
                   <button type="button" class="ghost-btn compact-btn" id="add-role-variant">Add</button>
                 </div>
                 <p class="field-note">Used to select the semantic role pattern. If no pattern is found, these signals are searched directly.</p>
-                <button type="button" class="ghost-btn strategy-refresh-btn" id="update-strategy-preview">Update Strategy Preview</button>
-                <div id="strategy-preview-status" class="strategy-preview-status hidden"></div>
               </div>
             </label>
 
@@ -111,6 +134,18 @@
               </span>
               <textarea name="locations" rows="3" placeholder="Ukraine&#10;Poland&#10;Remote"></textarea>
             </label>
+
+            <section class="strategy-card">
+              <div class="requirement-heading">
+                <div>
+                  <h3>Search Brief</h3>
+                  <p>Build a transparent search plan from the current manual fields, or from an applied requirement brief.</p>
+                </div>
+              </div>
+              <button type="button" class="ghost-btn strategy-refresh-btn" id="update-strategy-preview">Build Search Brief</button>
+              <div id="strategy-preview-status" class="strategy-preview-status hidden"></div>
+              <div id="search-strategy-preview" class="strategy-preview hidden"></div>
+            </section>
 
             <div class="two-col">
               <label>

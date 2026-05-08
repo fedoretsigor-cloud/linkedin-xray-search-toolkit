@@ -92,11 +92,13 @@ def save_project(projects_dir, project_index_file, project):
 
 
 def build_project_summary(project):
+    confirmed_brief = project.get("confirmed_brief") if isinstance(project.get("confirmed_brief"), dict) else {}
+    requirement_brief = project.get("requirement_brief") if isinstance(project.get("requirement_brief"), dict) else {}
     return {
         "id": project["id"],
         "created_at": project["created_at"],
         "updated_at": project["updated_at"],
-        "role": project.get("confirmed_brief", {}).get("role") or project.get("requirement_brief", {}).get("role") or "Untitled project",
+        "role": confirmed_brief.get("role") or requirement_brief.get("role") or project.get("search_role") or "Untitled project",
         "requirement_url": project.get("requirement_url", ""),
         "run_count": len(project.get("search_runs", [])),
         "candidate_count": project.get("candidate_count", 0),
@@ -119,6 +121,7 @@ def create_or_update_project(projects_dir, project_index_file, run_record):
     project["requirement_brief"] = run_record.get("requirement_brief")
     project["confirmed_brief"] = run_record.get("confirmed_brief")
     project["search_strategy"] = run_record.get("search_strategy", {})
+    project["search_role"] = run_record.get("search", {}).get("role", "")
     project["candidate_count"] = len(run_record.get("candidates", []))
 
     run_summary = {

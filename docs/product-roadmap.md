@@ -106,9 +106,12 @@ Current implementation:
 
 - The system shows an "Agent understanding" card.
 - The human can review the extracted brief before applying it.
+- Search Builder now starts with an explicit search mode: `Manual search` or `From vacancy URL`.
+- Manual search can build the same Search Brief / Search Strategy Preview without a vacancy URL.
 - Applying the brief fills the existing Search Builder.
 - The human can manually edit Role, Role Variants, Tech Stacks, Locations, Sources, and Results Limit.
 - Running search automatically saves `confirmed_brief` from the current form fields.
+- Manual searches now also save `confirmed_brief` with `source_type = manual`.
 - The run and sourcing project retain both the original extracted brief and the confirmed brief.
 
 Remaining work:
@@ -139,10 +142,13 @@ Current implementation:
 - Skills are split into compact query groups.
 - Query length is kept under Tavily limits.
 - Tavily errors now return readable JSON messages.
-- Search strategy preview is shown before search.
+- Search strategy preview is shown before search for both manual and vacancy-assisted searches.
 - Role is treated as the required primary title term, and role variants are grouped as OR alternatives where query length allows.
 - Search strategy preview now uses "planned searches" language instead of unclear "base queries".
 - `Remote + Country/City` inputs are reduced to the concrete country/city in outgoing search queries, while strict location filtering remains active.
+- Generic Tavily boosters such as `profile`, `resume`, `cv`, `frontend`, and `candidate` were removed because they narrowed or polluted searches.
+- For large result limits, search now expands through role-family query groups instead of repeating generic boosters.
+- For example, Java Backend at 200 candidates can expand into groups such as Java/JVM, Spring, Kafka/RabbitMQ, AWS/cloud, microservices, databases, REST/API, Docker/Kubernetes, Hibernate/JPA, and CI/CD.
 - Added the first semantic role pattern layer for common IT role families, starting with QA Automation, Java Backend, Frontend, Fullstack, iOS, Android, DevOps/SRE, Data, ML/AI, and Embedded.
 - Semantic role family selection now uses role/title signals plus extracted requirement/search-intent context.
 - The run stores `search_strategy`.
@@ -152,6 +158,7 @@ Remaining work:
 
 - Explain recall vs precision tradeoffs.
 - Allow the human to approve or edit query groups before running search.
+- Add adaptive search waves: if a 200-candidate search returns too few unique candidates after dedupe and strict filtering, launch additional different query groups instead of repeating identical queries.
 - Improve query planner clarity further after testing real searches.
 
 ### Phase 4: Candidate Search
@@ -173,6 +180,7 @@ Current implementation:
 - Tavily public search is wired into the app.
 - Search results are normalized, deduped, scored, and saved as search runs.
 - Hybrid role presets and editable role variants are implemented.
+- Query expansion now prefers meaningful family-specific search angles over repeated identical queries or noisy generic boosters.
 - Devpost-specific normalization now avoids treating project titles as candidate names.
 - Added `project_id`.
 - Added `data/projects/{project_id}.json`.
@@ -477,9 +485,11 @@ Recommended next build order:
 10. Done first slice: Save candidate reviews under the sourcing project.
 11. Done first slice: Load saved candidate reviews when opening historical runs/projects.
 12. In progress: Add PDF/DOCX resume upload and resume analysis.
-13. Later: Add decision memory across profile and resume review.
-14. Later: Add conversational sourcing copilot on top of stable workflow actions.
-15. Backlog: Add candidate communication tracking after the core review workflow is stable.
+13. In progress: Improve search engine recall for large result limits using semantic family query groups.
+14. Next: Add adaptive second/third search waves when a 100/200-candidate search returns too few unique results.
+15. Later: Add decision memory across profile and resume review.
+16. Later: Add conversational sourcing copilot on top of stable workflow actions.
+17. Backlog: Add candidate communication tracking after the core review workflow is stable.
 
 ## Current Decision
 
@@ -517,14 +527,20 @@ Completed:
 - Search Builder now labels role fields as Detected Role and Role Signals, and manual edits immediately refresh the strategy preview.
 - Added an explicit Update Strategy Preview action for manual search-builder changes.
 - Manual role/signal matches now override older extracted requirement context in semantic family selection, with inline family/pattern feedback under the update button.
+- Added explicit `Search mode` selection: Manual search or From vacancy URL.
+- Added a persistent Search Brief / Search Strategy Preview card that works for manual searches without a vacancy URL.
+- Manual searches now save a confirmed brief and can create sourcing projects without crashing when no requirement brief exists.
 - Search Strategy Preview now uses a compact summary plus expandable detail sections.
 - Search Strategy Preview now explains role logic, strict location, planned searches, and result-limit behavior.
 - Remote plus concrete location now searches the concrete location instead of the literal remote phrase.
+- Remote plus concrete location now removes standalone `remote` even when it is split by punctuation, for example `Remote, Brazil` -> `Brazil`.
 - Requirement Brief now shows compact canonical search-anchor chips and hides long extracted text in expandable sections.
 - Requirement Brief now also hides suggested role variants and open questions in expandable sections.
 - Confirmed brief is saved automatically from current fields at search time.
 - Search Intent Builder added so long human requirements become concise searchable anchors.
 - Strict location policy started: location now requires indexed evidence, not only query context.
+- Generic Tavily boosters removed.
+- Large-result search now expands through semantic role-family query groups instead of `profile/resume/cv/frontend` booster variants.
 - Search progress active-wait UX improved for long-running searches.
 - Sourcing project persistence added.
 - Search runs are linked to sourcing projects.
@@ -537,9 +553,10 @@ In progress:
 
 - Owner-led search-engine review.
 - Strict location filtering and UX validation.
+- High-recall search planning for 100/200-candidate runs.
 - Resume review UX.
 - Frontend simplification so the left panel stays usable as the workflow grows.
 
 Next recommended product step:
 
-- Validate strict location filtering on real searches, then improve query planner clarity.
+- Validate the new 12-query family expansion on real 200-candidate searches, then design adaptive second/third search waves for cases where dedupe and strict location filtering still return too few candidates.

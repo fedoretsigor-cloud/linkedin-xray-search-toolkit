@@ -102,7 +102,9 @@ Current implementation notes:
 
 - Backend now groups role titles into one OR title group where query length allows.
 - Backend still builds planned searches across skill groups, locations, and sources.
-- For a 20-candidate limit, each planned search gets one provider query variant, but all planned searches can still run.
+- Generic Tavily boosters were removed because they turned clean base queries into narrower/noisier variants such as `profile`, `resume`, `cv`, `frontend`, and `candidate`.
+- For a 20-candidate limit, the system keeps a small number of focused planned searches.
+- For a 100/200-candidate limit, the system now expands through role-family query groups instead of generic boosters.
 - Final results are deduped and sliced to the requested candidate limit.
 - The UI should make the difference clear between `query groups used for search` and `final result limit`.
 
@@ -110,6 +112,8 @@ Implementation note:
 
 - The Search Strategy Preview now says all planned searches can run, then final candidates are deduped and capped by Results Limit.
 - `Remote + Country/City` is also cleaned before query generation, so `Remote Brazil` searches for `Brazil` while retaining strict location filtering.
+- `Remote, Brazil` and similar comma-separated input now also drops standalone `remote` and searches concrete location evidence only.
+- Java Backend at 200 candidates currently expands toward up to 12 meaningful groups, for example Java/JVM, Spring, Kafka/RabbitMQ, AWS/cloud, microservices, databases, REST/API, Docker/Kubernetes, Hibernate/JPA, and CI/CD.
 
 ### Q6. Location must be strict
 
@@ -209,13 +213,16 @@ Current implementation notes:
 
 - Current provider query string effectively combines groups with AND-like spacing and OR inside groups.
 - The app still splits skill groups into multiple planned searches to avoid overly long queries and improve recall.
-- Need a clearer query planner that can decide between one strict query and multiple recall-expansion queries later.
+- The app no longer multiplies queries with generic booster tails.
+- For large result limits, the app uses multiple semantic query groups because one very large OR query can let common terms dominate ranking and bury narrower evidence.
+- Need a clearer query planner that can decide between one compact merged query and multiple recall-expansion queries later.
 
 Implementation note:
 
 - Role variants are now grouped with OR after the required Role term.
 - Skills still run as compact query groups to avoid long provider queries and preserve recall.
 - Explicit `strict / balanced / broad` modes are intentionally not implemented yet.
+- Repeating the same 12 queries several times is not expected to help much because Tavily will likely return overlapping results; future high-recall search should use adaptive second/third waves with different query groups.
 
 Initial direction:
 
@@ -223,6 +230,30 @@ Initial direction:
 - `strict`: one compact query with core AND constraints.
 - `balanced`: several queries with role/domain/skill variations.
 - `broad`: more recall-oriented expansion.
+- Before adding formal modes, add adaptive search waves for 100/200-candidate searches when unique candidate count is too low.
+
+### Q11. How do we reliably get close to 200 candidates?
+
+Owner concern:
+
+- If the user selects 200 candidates, the system should make a serious attempt to return close to 200.
+- The owner is willing to run more provider requests if that materially improves unique candidate count.
+
+Current status: First improvement implemented; adaptive waves planned.
+
+Decision:
+
+- Do not repeat identical queries multiple times; repeated identical requests are likely to return duplicate results after dedupe.
+- Do not restore generic boosters like `profile`, `resume`, `cv`, `frontend`, or `candidate`.
+- Increase recall through more meaningful role-family query groups.
+- If the first wave still returns too few unique candidates, future waves should use different search angles, not the same queries again.
+
+Implementation note:
+
+- Added semantic family query expansion for large result limits.
+- For Java Backend at 200 candidates, the system now builds up to 12 planned searches instead of 3 focused searches or 30 noisy booster searches.
+- The expected raw capacity is about `12 * 20 = 240` provider results before dedupe and strict location filtering.
+- The next search-engine improvement should be adaptive waves: wave 1 focused groups, wave 2 alternate role/skill groups, wave 3 broader discovery groups if still below target.
 
 ### Q10. Future chat-based sourcing copilot
 
@@ -253,5 +284,6 @@ Initial direction:
 2. Redesign requirement analysis display into a compact Search Brief.
 3. Redesign query planning so Role is primary and variants are grouped or intentionally expanded.
 4. Clarify Search Intent Preview so users see exactly what will be searched.
-5. Add query planner modes: strict, balanced, broad.
-6. Later, implement conversational sourcing copilot using the same structured search workflow.
+5. Improve 100/200-candidate recall with adaptive search waves.
+6. Later, consider query planner modes: strict, balanced, broad.
+7. Later, implement conversational sourcing copilot using the same structured search workflow.
