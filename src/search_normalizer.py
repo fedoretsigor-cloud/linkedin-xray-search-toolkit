@@ -23,6 +23,94 @@ def extract_name(title):
     return clean_text(title)
 
 
+LOCATION_STOP_MARKERS = {
+    "about",
+    "experience",
+    "education",
+    "contact info",
+    "connections",
+    "followers",
+}
+
+NON_LOCATION_ROLE_MARKERS = {
+    "analyst",
+    "engineer",
+    "developer",
+    "consultant",
+    "manager",
+    "architect",
+    "owner",
+    "leader",
+    "trading",
+    "risk",
+    "agile",
+    "delivery",
+    "technology",
+    "systems",
+    "experience",
+}
+
+
+def _looks_like_location_line(value):
+    line = clean_text(value)
+    if not line:
+        return False
+
+    lower = line.lower()
+    if len(line) > 80:
+        return False
+    if lower in LOCATION_STOP_MARKERS:
+        return False
+    if any(marker in lower for marker in ("connections", "followers", "contact info")):
+        return False
+    if line.startswith("[") or "http" in lower:
+        return False
+    if "|" in line:
+        return False
+    if any(char.isdigit() for char in line):
+        return False
+    if any(marker in lower for marker in NON_LOCATION_ROLE_MARKERS):
+        return False
+
+    explicit_location_markers = (
+        "greater ",
+        " metroplex",
+        " area",
+        " metropolitan area",
+        " region",
+        " united states",
+        " usa",
+        " germany",
+        " poland",
+        " india",
+        " canada",
+        " uk",
+        " united kingdom",
+    )
+    if any(marker in lower for marker in explicit_location_markers):
+        return True
+
+    comma_parts = [part.strip() for part in line.split(",") if part.strip()]
+    return 2 <= len(comma_parts) <= 4
+
+
+def extract_profile_location(description, profile_name=""):
+    lines = [clean_text(line) for line in clean_text(description).splitlines()]
+    lines = [line for line in lines if line]
+    if not lines:
+        return ""
+
+    normalized_name = clean_text(profile_name).lower()
+    for line in lines[:8]:
+        if normalized_name and line.lower() == normalized_name:
+            continue
+        if line.lower() in LOCATION_STOP_MARKERS:
+            break
+        if _looks_like_location_line(line):
+            return line
+    return ""
+
+
 def extract_linkedin_metadata(url):
     parsed = urlparse(url or "")
     host = (parsed.netloc or "").lower()
@@ -49,6 +137,7 @@ def normalize_serpapi_items(query, payload):
     for item in items:
         title = clean_text(item.get("title", ""))
         link = item.get("link", "")
+        description = clean_text(item.get("snippet", ""))
         linkedin_meta = extract_linkedin_metadata(link)
         normalized.append(
             {
@@ -57,7 +146,8 @@ def normalize_serpapi_items(query, payload):
                 "result_title": title,
                 "profile_url": link,
                 "is_linkedin_profile": linkedin_meta["is_profile"],
-                "short_description": clean_text(item.get("snippet", "")),
+                "short_description": description,
+                "location": extract_profile_location(description, extract_name(title)),
                 "result_position": item.get("position", ""),
             }
         )
@@ -70,6 +160,7 @@ def normalize_brave_items(query, payload):
     for item in items:
         title = clean_text(item.get("title", ""))
         link = item.get("url", "")
+        description = clean_text(item.get("description", ""))
         linkedin_meta = extract_linkedin_metadata(link)
         normalized.append(
             {
@@ -78,7 +169,8 @@ def normalize_brave_items(query, payload):
                 "result_title": title,
                 "profile_url": link,
                 "is_linkedin_profile": linkedin_meta["is_profile"],
-                "short_description": clean_text(item.get("description", "")),
+                "short_description": description,
+                "location": extract_profile_location(description, extract_name(title)),
                 "result_position": "",
             }
         )

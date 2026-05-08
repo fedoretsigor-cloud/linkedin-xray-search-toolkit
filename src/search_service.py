@@ -16,7 +16,7 @@ from src.search_normalizer import normalize_brave_items, normalize_serpapi_items
 from src.search_orchestrator import run_search as run_search_pipeline
 from src.search_strategy import compact_search_input, is_query_within_limit
 from src.text_utils import clean_text
-from src.xray_search import build_pattern_query, build_query, build_query_from_title_pattern
+from src.xray_search import build_or_group, build_pattern_query, build_query, build_query_from_title_pattern
 
 
 SITE_FILTERS = {
@@ -115,6 +115,14 @@ def build_queries(search_input):
     primary_title = title_group[0] if title_group and title_group[0] else ""
     title_variants = title_group[1:] if len(title_group) > 1 else []
     role_pattern = search_input.get("role_pattern") or build_role_pattern(primary_title, title_variants)
+    if role_pattern.get("query_strategy") == "grouped_anchors":
+        return build_grouped_anchor_queries(
+            compacted_input=compacted_input,
+            primary_title=primary_title,
+            title_group=title_group,
+            role_pattern=role_pattern,
+        )
+
     for skill_group in compacted_input["skill_groups"]:
         for location in compacted_input["locations"]:
             for source_site in compacted_input["source_sites"]:
@@ -189,6 +197,121 @@ def build_queries(search_input):
     if not queries:
         raise RuntimeError("Could not build a Tavily-friendly query under 400 characters. Please shorten role, skills, or location.")
     return queries
+
+
+def build_grouped_anchor_queries(*, compacted_input, primary_title, title_group, role_pattern):
+    queries = []
+    for location in compacted_input["locations"]:
+        for source_site in compacted_input["source_sites"]:
+            skill_terms = [
+                *role_pattern.get("fixed_anchors", []),
+                *role_pattern.get("domain_terms", []),
+                *role_pattern.get("tool_terms", []),
+            ]
+            for query in build_grouped_anchor_query_variants(
+                role_pattern=role_pattern,
+                location=location,
+                extras=compacted_input["extras"],
+                site_filter=SITE_FILTERS[source_site],
+            ):
+                if not is_query_within_limit(query):
+                    continue
+                queries.append(
+                    {
+                        "query": query,
+                        "title_input": primary_title,
+                        "title_group_input": " | ".join(title_group),
+                        "title_pattern_input": role_pattern.get("title_pattern", ""),
+                        "role_pattern_family": role_pattern.get("family", ""),
+                        "role_pattern_mode": role_pattern.get("mode", ""),
+                        "skill_input": " | ".join(skill_terms),
+                        "location_input": location,
+                        "source_site": source_site,
+                    }
+                )
+    if not queries:
+        raise RuntimeError("Could not build a Tavily-friendly grouped-anchor query under 400 characters. Please shorten role, tools, or location.")
+    return queries
+
+
+def build_grouped_anchor_query_variants(*, role_pattern, location, extras, site_filter):
+    queries = []
+    seen = set()
+    for domain_term in role_pattern.get("domain_terms", []) or [""]:
+        for tool_term in [*role_pattern.get("tool_terms", []), ""]:
+            query = build_small_grouped_anchor_query(
+                role_pattern=role_pattern,
+                domain_term=domain_term,
+                tool_term=tool_term,
+                location=location,
+                extras=extras,
+                site_filter=site_filter,
+            )
+            key = query.lower()
+            if query and key not in seen:
+                seen.add(key)
+                queries.append(query)
+
+    broad_query = build_grouped_anchor_query(
+        role_pattern={**role_pattern, "tool_terms": []},
+        location=location,
+        extras=extras,
+        site_filter=site_filter,
+    )
+    key = broad_query.lower()
+    if broad_query and key not in seen:
+        queries.append(broad_query)
+
+    return queries
+
+
+def build_small_grouped_anchor_query(*, role_pattern, domain_term, tool_term, location, extras, site_filter):
+    parts = [site_filter]
+    title_pattern = role_pattern.get("title_pattern", "")
+    fixed_anchors = role_pattern.get("fixed_anchors", [])
+
+    if title_pattern:
+        parts.append(title_pattern)
+    for anchor in fixed_anchors:
+        anchor = clean_text(anchor)
+        if anchor:
+            parts.append(f"\"{anchor}\"")
+    for term in (domain_term, tool_term):
+        term = clean_text(term)
+        if term:
+            parts.append(f"\"{term}\"")
+    if location:
+        parts.append(f"\"{location}\"")
+    for extra in extras:
+        extra = clean_text(extra)
+        if extra:
+            parts.append(f"\"{extra}\"")
+    return " ".join(parts)
+
+
+def build_grouped_anchor_query(*, role_pattern, location, extras, site_filter):
+    parts = [site_filter]
+    title_pattern = role_pattern.get("title_pattern", "")
+    fixed_anchors = role_pattern.get("fixed_anchors", [])
+    domain_group = build_or_group(role_pattern.get("domain_terms", []))
+    tool_group = build_or_group(role_pattern.get("tool_terms", []))
+
+    if title_pattern:
+        parts.append(title_pattern)
+    for anchor in fixed_anchors:
+        anchor = clean_text(anchor)
+        if anchor:
+            parts.append(f"\"{anchor}\"")
+    for group in (domain_group, tool_group):
+        if group:
+            parts.append(group)
+    if location:
+        parts.append(f"\"{location}\"")
+    for extra in extras:
+        extra = clean_text(extra)
+        if extra:
+            parts.append(f"\"{extra}\"")
+    return " ".join(parts)
 
 
 def format_duration(seconds):

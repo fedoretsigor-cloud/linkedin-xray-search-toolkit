@@ -53,6 +53,7 @@ def score_candidate(candidate, search):
     technology = clean_text(candidate.get("technology", ""))
     location = clean_text(candidate.get("location", ""))
     location_match = candidate.get("location_match", {}) or {}
+    target_location = clean_text(candidate.get("target_location", ""))
     profile_name = clean_text(candidate.get("profile_name", ""))
 
     if source_site == "linkedin" and candidate.get("is_linkedin_profile"):
@@ -100,14 +101,14 @@ def score_candidate(candidate, search):
     else:
         risks.append("No stack keywords were provided for scoring")
 
-    if location:
+    if target_location:
         if location_match.get("matched"):
             score += 14
-            matched_terms = ", ".join(location_match.get("matched_terms") or [location])
+            matched_terms = ", ".join(location_match.get("matched_terms") or [location or target_location])
             reasons.append(f"Indexed text matches strict location: {matched_terms}")
-        elif _contains_phrase(description_lower, location):
+        elif _contains_phrase(description_lower, target_location):
             score += 14
-            reasons.append(f"Description mentions target location: {location}")
+            reasons.append(f"Description mentions target location: {target_location}")
         else:
             risks.append("Target location is not clearly visible in indexed profile text")
 

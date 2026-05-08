@@ -32,6 +32,32 @@ def merge_role_titles(role, titles):
     return merged
 
 
+def sanitize_search_intent(search_intent):
+    if not isinstance(search_intent, dict):
+        return {}
+
+    def clean_values(values):
+        cleaned = []
+        for value in values if isinstance(values, list) else []:
+            text = clean_text(value)
+            if text and text.lower() not in {"object object", "[object object]"}:
+                cleaned.append(text)
+        return cleaned
+
+    return {
+        "role_titles": clean_values(search_intent.get("role_titles", [])),
+        "must_have_keywords": clean_values(search_intent.get("must_have_keywords", [])),
+        "domain_keywords": clean_values(search_intent.get("domain_keywords", [])),
+        "tool_keywords": clean_values(search_intent.get("tool_keywords", [])),
+        "optional_keywords": clean_values(search_intent.get("optional_keywords", [])),
+        "skill_groups": [
+            clean_values(group)
+            for group in search_intent.get("skill_groups", [])
+            if clean_values(group)
+        ],
+    }
+
+
 def build_web_search_request(payload, default_results):
     requested_num = payload.get("num", default_results)
     try:
@@ -71,7 +97,9 @@ def build_web_search_request(payload, default_results):
         raise RuntimeError("At least one role/title is required")
 
     confirmed_brief = search["confirmed_brief"] or {}
-    search_intent = confirmed_brief.get("search_intent") or (build_search_intent(confirmed_brief) if confirmed_brief else {})
+    search_intent = sanitize_search_intent(
+        confirmed_brief.get("search_intent") or (build_search_intent(confirmed_brief) if confirmed_brief else {})
+    )
     skill_groups = search_intent.get("skill_groups") or [
         [part.strip() for part in group.split("|") if part.strip()]
         for group in search["tech_groups"]

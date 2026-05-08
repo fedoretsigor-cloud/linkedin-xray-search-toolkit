@@ -70,8 +70,8 @@ def build_location_terms(locations):
 
 def build_location_query_values(locations):
     values = []
-    for location in effective_locations(locations):
-        normalized = normalize_for_match(location)
+    for location in locations or []:
+        normalized = normalize_for_match(extract_primary_query_location(location))
         if not normalized:
             continue
         if has_remote_marker(normalized):
@@ -80,6 +80,26 @@ def build_location_query_values(locations):
         else:
             values.append(normalized)
     return dedupe_values(values)
+
+
+def extract_primary_query_location(location):
+    raw = clean_text(location)
+    if not raw:
+        return ""
+    parts = [clean_text(part) for part in re.split(r"[,;/\n]+", raw) if clean_text(part)]
+    if not parts:
+        return ""
+
+    primary = parts[0]
+    normalized_primary = normalize_for_match(primary)
+    if has_remote_marker(normalized_primary):
+        remainder = strip_remote_marker(normalized_primary)
+        return remainder or "remote"
+
+    # General rule:
+    # if user specifies "City, State/Country", search query uses only the first
+    # concrete place token, while strict filtering still validates the full location.
+    return primary
 
 
 def row_location_evidence(row):

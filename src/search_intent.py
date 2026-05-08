@@ -58,6 +58,18 @@ CANONICAL_TERMS = [
     ("spring", "Spring", "tooling"),
     ("kafka", "Kafka", "tooling"),
     ("aws", "AWS", "tooling"),
+    ("front office", "Front Office", "domain"),
+    ("power trading", "Power Trading", "domain"),
+    ("energy trading", "Energy Trading", "domain"),
+    ("commodity trading", "Commodity Trading", "domain"),
+    ("commodities", "Commodities", "domain"),
+    ("etrm", "ETRM", "domain"),
+    ("ctrm", "CTRM", "domain"),
+    ("orchestrade", "Orchestrade", "tooling"),
+    ("endur", "Endur", "tooling"),
+    ("openlink", "Openlink", "tooling"),
+    ("rightangle", "RightAngle", "tooling"),
+    ("allegro", "Allegro", "tooling"),
 ]
 
 
@@ -130,6 +142,8 @@ def normalize_for_match(value):
 def clean_search_keyword(value):
     text = clean_text(value).strip(" ,;:()[]{}-")
     text = re.sub(r"\s+", " ", text)
+    if text.lower() in {"object object", "[object object]"}:
+        return ""
     if not text or len(text) > 35:
         return ""
     if len(text.split()) > 4:
@@ -181,6 +195,8 @@ def dedupe_values(values):
 
 def add_unique(values, value):
     text = clean_text(value)
+    if text.lower() in {"object object", "[object object]"}:
+        return
     key = text.lower()
     if text and key not in {item.lower() for item in values}:
         values.append(text)

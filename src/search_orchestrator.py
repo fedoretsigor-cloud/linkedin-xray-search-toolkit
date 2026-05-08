@@ -26,7 +26,8 @@ def attach_query_context(rows, query_info):
     for row in rows:
         row["role"] = query_info["title_input"]
         row["technology"] = query_info["skill_input"]
-        row["location"] = query_info["location_input"]
+        row["target_location"] = query_info["location_input"]
+        row["location"] = row.get("location", "")
         row["source_site"] = query_info["source_site"]
     return rows
 

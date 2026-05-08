@@ -53,6 +53,18 @@ const SEARCH_INTENT_TERMS = [
   ["spring", "Spring", "tooling"],
   ["kafka", "Kafka", "tooling"],
   ["aws", "AWS", "tooling"],
+  ["front office", "Front Office", "domain"],
+  ["power trading", "Power Trading", "domain"],
+  ["energy trading", "Energy Trading", "domain"],
+  ["commodity trading", "Commodity Trading", "domain"],
+  ["commodities", "Commodities", "domain"],
+  ["etrm", "ETRM", "domain"],
+  ["ctrm", "CTRM", "domain"],
+  ["orchestrade", "Orchestrade", "tooling"],
+  ["endur", "Endur", "tooling"],
+  ["openlink", "Openlink", "tooling"],
+  ["rightangle", "RightAngle", "tooling"],
+  ["allegro", "Allegro", "tooling"],
 ];
 
 const GENERIC_SEARCH_PHRASES = new Set([
@@ -70,6 +82,29 @@ const GENERIC_SEARCH_PHRASES = new Set([
 ]);
 
 const ROLE_PATTERN_FAMILIES = [
+  {
+    family: "Energy / ETRM Business Analyst",
+    triggers: [
+      "etrm",
+      "ctrm",
+      "front office",
+      "power trading",
+      "energy trading",
+      "commodity trading",
+      "commodities",
+      "orchestrade",
+      "endur",
+      "rightangle",
+      "allegro",
+      "openlink",
+    ],
+    coreTerms: ["Business Analyst"],
+    roleTerms: [],
+    queryStrategy: "grouped_anchors",
+    fixedAnchors: ["Front Office"],
+    domainTerms: ["Power Trading", "Energy Trading", "ETRM"],
+    toolTerms: ["Orchestrade", "Endur"],
+  },
   {
     family: "QA Automation",
     triggers: ["qa", "quality assurance", "test automation", "automation test", "automated test", "sdet", "tester"],
@@ -1211,6 +1246,10 @@ function buildSemanticRolePattern(primaryRole, roleVariants, context = null) {
       confidence: "low",
       coreTerms: [primaryRole].filter(Boolean),
       roleTerms: roleVariants,
+      queryStrategy: "skill_groups",
+      fixedAnchors: [],
+      domainTerms: [],
+      toolTerms: [],
       titlePattern: buildTitlePattern(primaryRole, roleVariants),
     };
   }
@@ -1220,6 +1259,10 @@ function buildSemanticRolePattern(primaryRole, roleVariants, context = null) {
     confidence: titleMatched ? "high" : "medium",
     coreTerms: matched.coreTerms,
     roleTerms: matched.roleTerms,
+    queryStrategy: matched.queryStrategy || "skill_groups",
+    fixedAnchors: matched.fixedAnchors || [],
+    domainTerms: matched.domainTerms || [],
+    toolTerms: matched.toolTerms || [],
     titlePattern: `${buildQuotedOrGroup(matched.coreTerms)} ${buildQuotedOrGroup(matched.roleTerms)}`.trim(),
   };
 }
@@ -1227,7 +1270,8 @@ function buildSemanticRolePattern(primaryRole, roleVariants, context = null) {
 function buildLocationQueryValues(locations) {
   const values = dedupeTextValues(
     locations.map((location) => {
-      const normalized = cleanSearchPhrase(location).toLowerCase().replaceAll("-", " ").replaceAll("/", " ");
+      const primaryLocation = cleanSearchPhrase(location).split(/[,;/\n]+/)[0] || "";
+      const normalized = cleanSearchPhrase(primaryLocation).toLowerCase().replaceAll("-", " ").replaceAll("/", " ");
       const stripped = normalized
         .replace(/\bwork from home\b/g, " ")
         .replace(/\bremote work\b/g, " ")
@@ -1242,6 +1286,51 @@ function buildLocationQueryValues(locations) {
   ).filter(Boolean);
   const hasConcreteLocation = values.some((value) => value.toLowerCase() !== "remote");
   return hasConcreteLocation ? values.filter((value) => value.toLowerCase() !== "remote") : values;
+}
+
+function buildGroupedAnchorPreviewQueries(rolePattern, locations, sources) {
+  const sampleQueries = [];
+  const domainTerms = rolePattern.domainTerms?.length ? rolePattern.domainTerms : [""];
+  const toolTerms = [...(rolePattern.toolTerms || []), ""];
+
+  (sources.length ? sources : ["linkedin"]).slice(0, 1).forEach(() => {
+    (locations.length ? locations : [""]).slice(0, 5).forEach((location) => {
+      domainTerms.forEach((domainTerm) => {
+        toolTerms.forEach((toolTerm) => {
+          const parts = ['site:linkedin.com/in/'];
+          const titlePattern = rolePattern.titlePattern;
+          const fixedAnchors = rolePattern.fixedAnchors || [];
+          if (titlePattern) parts.push(titlePattern);
+          fixedAnchors.forEach((anchor) => {
+            if (anchor) parts.push(`"${anchor}"`);
+          });
+          if (domainTerm) parts.push(`"${domainTerm}"`);
+          if (toolTerm) parts.push(`"${toolTerm}"`);
+          if (location) parts.push(`"${location}"`);
+          sampleQueries.push(parts.join(" "));
+        });
+      });
+
+      const broadParts = ['site:linkedin.com/in/'];
+      if (rolePattern.titlePattern) broadParts.push(rolePattern.titlePattern);
+      (rolePattern.fixedAnchors || []).forEach((anchor) => {
+        if (anchor) broadParts.push(`"${anchor}"`);
+      });
+      const domainGroup = buildQuotedOrGroup(rolePattern.domainTerms || []);
+      if (domainGroup) broadParts.push(domainGroup);
+      if (location) broadParts.push(`"${location}"`);
+      sampleQueries.push(broadParts.join(" "));
+    });
+  });
+
+  return dedupeTextValues(sampleQueries);
+}
+
+function buildGroupedAnchorQueryCount(rolePattern, locations, sources) {
+  const domainCount = Math.max((rolePattern.domainTerms || []).length, 1);
+  const toolCount = (rolePattern.toolTerms || []).length + 1;
+  const variantCount = domainCount * toolCount + 1;
+  return variantCount * Math.max(locations.length, 1) * Math.max(sources.length, 1);
 }
 
 function buildStrategyPreviewFromForm() {
@@ -1263,20 +1352,27 @@ function buildStrategyPreviewFromForm() {
     techGroups: lines(form.tech_groups.value),
   });
   const expandedSkillGroups = expandSkillGroupsForTarget(skillGroups, rolePattern.family, form.num.value);
-  const queryCount = Math.max(expandedSkillGroups.length, 1) * Math.max(locations.length, 1) * Math.max(sources.length, 1);
-  const sampleQueries = [];
+  const isGroupedAnchorStrategy = rolePattern.queryStrategy === "grouped_anchors";
+  const queryCount = isGroupedAnchorStrategy
+    ? buildGroupedAnchorQueryCount(rolePattern, locations, sources)
+    : Math.max(expandedSkillGroups.length, 1) * Math.max(locations.length, 1) * Math.max(sources.length, 1);
+  let sampleQueries = [];
   const titlePattern = rolePattern.titlePattern;
 
-  (expandedSkillGroups.length ? expandedSkillGroups : [[]]).slice(0, 5).forEach((skills) => {
-    (locations.length ? locations : [""]).slice(0, 1).forEach((location) => {
-      const parts = ['site:linkedin.com/in/'];
-      if (titlePattern) parts.push(titlePattern);
-      if (skills.length === 1) parts.push(`"${skills[0]}"`);
-      if (skills.length > 1) parts.push(`(${skills.map((skill) => `"${skill}"`).join(" OR ")})`);
-      if (location) parts.push(`"${location}"`);
-      sampleQueries.push(parts.join(" "));
+  if (isGroupedAnchorStrategy) {
+    sampleQueries = buildGroupedAnchorPreviewQueries(rolePattern, locations, sources);
+  } else {
+    (expandedSkillGroups.length ? expandedSkillGroups : [[]]).slice(0, 5).forEach((skills) => {
+      (locations.length ? locations : [""]).slice(0, 1).forEach((location) => {
+        const parts = ['site:linkedin.com/in/'];
+        if (titlePattern) parts.push(titlePattern);
+        if (skills.length === 1) parts.push(`"${skills[0]}"`);
+        if (skills.length > 1) parts.push(`(${skills.map((skill) => `"${skill}"`).join(" OR ")})`);
+        if (location) parts.push(`"${location}"`);
+        sampleQueries.push(parts.join(" "));
+      });
     });
-  });
+  }
 
   return {
     primary_role: primaryRole,
@@ -1285,6 +1381,7 @@ function buildStrategyPreviewFromForm() {
     role_pattern_family: rolePattern.family,
     role_pattern_mode: rolePattern.mode,
     role_pattern_confidence: rolePattern.confidence,
+    query_strategy: rolePattern.queryStrategy,
     titles,
     skill_groups: expandedSkillGroups,
     original_skill_groups: skillGroups,
@@ -1377,7 +1474,10 @@ function buildSearchIntentFromForm(form) {
         state.requirementBrief.domain || "",
       ])
     : [];
-  const terms = collectSearchIntentTerms([...formTerms, ...briefTerms]);
+  const terms = dedupeIntentTerms([
+    ...collectSearchIntentTerms(formTerms),
+    ...briefTerms,
+  ]);
   return buildSearchIntentPayload({
     roleTitles: [form.role.value.trim(), ...state.roleVariants],
     terms,
