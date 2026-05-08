@@ -10,12 +10,13 @@ from dotenv import load_dotenv
 
 from src.facebook_filter import is_facebook_open_to_work_row
 from src.result_quality import is_quality_search_row
+from src.role_pattern_builder import build_role_pattern
 from src.search_clients import search_brave, search_serpapi
 from src.search_normalizer import normalize_brave_items, normalize_serpapi_items
 from src.search_orchestrator import run_search as run_search_pipeline
 from src.search_strategy import compact_search_input, is_query_within_limit
 from src.text_utils import clean_text
-from src.xray_search import build_query
+from src.xray_search import build_pattern_query, build_query, build_query_from_title_pattern
 
 
 SITE_FILTERS = {
@@ -110,12 +111,60 @@ def build_search_input_from_args(args):
 def build_queries(search_input):
     queries = []
     compacted_input = compact_search_input(search_input)
-    for title in compacted_input["titles"]:
-        for skill_group in compacted_input["skill_groups"]:
-            for location in compacted_input["locations"]:
-                for source_site in compacted_input["source_sites"]:
+    title_group = compacted_input["titles"]
+    primary_title = title_group[0] if title_group and title_group[0] else ""
+    title_variants = title_group[1:] if len(title_group) > 1 else []
+    role_pattern = search_input.get("role_pattern") or build_role_pattern(primary_title, title_variants)
+    for skill_group in compacted_input["skill_groups"]:
+        for location in compacted_input["locations"]:
+            for source_site in compacted_input["source_sites"]:
+                query = ""
+                title_pattern = role_pattern.get("title_pattern", "")
+                selected_role_terms = list(role_pattern.get("role_terms", []))
+                while title_pattern:
+                    query = build_query_from_title_pattern(
+                        title_pattern=title_pattern,
+                        skills=skill_group,
+                        locations=[location] if location else [],
+                        extras=compacted_input["extras"],
+                        site_filter=SITE_FILTERS[source_site],
+                    )
+                    if is_query_within_limit(query):
+                        break
+                    if role_pattern.get("mode") == "semantic" and selected_role_terms:
+                        selected_role_terms = selected_role_terms[:-1]
+                        trimmed_pattern = dict(role_pattern)
+                        trimmed_pattern["role_terms"] = selected_role_terms
+                        title_pattern = build_role_pattern(
+                            " ".join(trimmed_pattern.get("core_terms", [])),
+                            selected_role_terms,
+                        )["title_pattern"]
+                        continue
+                    title_pattern = ""
+
+                if not title_pattern or not is_query_within_limit(query):
+                    selected_primary = primary_title
+                    selected_variants = list(title_variants)
+                    while selected_primary or selected_variants:
+                        query = build_pattern_query(
+                            primary_title=selected_primary,
+                            title_variants=selected_variants,
+                            skills=skill_group,
+                            locations=[location] if location else [],
+                            extras=compacted_input["extras"],
+                            site_filter=SITE_FILTERS[source_site],
+                        )
+                        if is_query_within_limit(query):
+                            title_pattern = " ".join([selected_primary, *selected_variants] if selected_primary else selected_variants)
+                            break
+                        if selected_variants:
+                            selected_variants = selected_variants[:-1]
+                        else:
+                            selected_primary = ""
+
+                if not title_pattern:
                     query = build_query(
-                        titles=[title] if title else [],
+                        titles=[],
                         skills=skill_group,
                         locations=[location] if location else [],
                         extras=compacted_input["extras"],
@@ -123,15 +172,20 @@ def build_queries(search_input):
                     )
                     if not is_query_within_limit(query):
                         continue
-                    queries.append(
-                        {
-                            "query": query,
-                            "title_input": title,
-                            "skill_input": " | ".join(skill_group),
-                            "location_input": location,
-                            "source_site": source_site,
-                        }
-                    )
+
+                queries.append(
+                    {
+                        "query": query,
+                        "title_input": primary_title,
+                        "title_group_input": " | ".join(title_group),
+                        "title_pattern_input": role_pattern.get("title_pattern", ""),
+                        "role_pattern_family": role_pattern.get("family", ""),
+                        "role_pattern_mode": role_pattern.get("mode", ""),
+                        "skill_input": " | ".join(skill_group),
+                        "location_input": location,
+                        "source_site": source_site,
+                    }
+                )
     if not queries:
         raise RuntimeError("Could not build a Tavily-friendly query under 400 characters. Please shorten role, skills, or location.")
     return queries

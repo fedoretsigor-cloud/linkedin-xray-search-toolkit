@@ -76,23 +76,25 @@
 
             <label>
               <span class="label-row">
-                <span>Role</span>
+                <span>Detected Role</span>
               </span>
               <input name="role" placeholder="Senior Java Developer">
             </label>
 
             <label>
               <span class="label-row">
-                <span>Role Variants</span>
+                <span>Role Signals</span>
               </span>
               <input type="hidden" name="titles" id="role-variants-hidden">
               <div class="variant-editor">
                 <div id="role-variant-chips" class="variant-chips" aria-live="polite"></div>
                 <div class="variant-add-row">
-                  <input id="role-variant-input" type="text" placeholder="Add variant, e.g. Backend Engineer">
+                  <input id="role-variant-input" type="text" placeholder="Add signal, e.g. Backend Engineer">
                   <button type="button" class="ghost-btn compact-btn" id="add-role-variant">Add</button>
                 </div>
-                <p class="field-note">These titles will be used as search variants.</p>
+                <p class="field-note">Used to select the semantic role pattern. If no pattern is found, these signals are searched directly.</p>
+                <button type="button" class="ghost-btn strategy-refresh-btn" id="update-strategy-preview">Update Strategy Preview</button>
+                <div id="strategy-preview-status" class="strategy-preview-status hidden"></div>
               </div>
             </label>
 

@@ -1,4 +1,5 @@
 from src.text_utils import clean_text
+from src.role_pattern_builder import build_role_pattern
 
 
 MAX_TITLE_LENGTH = 80
@@ -79,8 +80,17 @@ def is_query_within_limit(query, max_length=MAX_TAVILY_QUERY_LENGTH):
 
 def summarize_search_strategy(search_input, queries):
     compacted = compact_search_input(search_input)
+    titles = compacted.get("titles", [])
+    role_pattern = search_input.get("role_pattern") or build_role_pattern(titles[0] if titles else "", titles[1:] if len(titles) > 1 else [])
     return {
-        "titles": compacted.get("titles", []),
+        "titles": titles,
+        "primary_role": titles[0] if titles else "",
+        "role_variants": titles[1:] if len(titles) > 1 else [],
+        "title_pattern": role_pattern.get("title_pattern", ""),
+        "role_pattern_family": role_pattern.get("family", ""),
+        "role_pattern_mode": role_pattern.get("mode", ""),
+        "role_pattern_confidence": role_pattern.get("confidence", "low"),
+        "role_pattern": role_pattern,
         "skill_groups": compacted.get("skill_groups", []),
         "search_intent": search_input.get("search_intent", {}),
         "locations": compacted.get("locations", []),

@@ -11,6 +11,16 @@ def build_or_group(values):
     return f"({joined})"
 
 
+def build_title_pattern(primary_title, title_variants=None):
+    primary = (primary_title or "").strip()
+    variants = [value.strip() for value in title_variants or [] if value and value.strip()]
+    if primary and variants:
+        return " ".join([f"\"{primary}\"", build_or_group(variants)])
+    if primary:
+        return f"\"{primary}\""
+    return build_or_group(variants)
+
+
 def build_query(titles, skills, locations, extras, site_filter="site:linkedin.com/in/"):
     parts = [site_filter]
 
@@ -19,6 +29,43 @@ def build_query(titles, skills, locations, extras, site_filter="site:linkedin.co
     location_group = build_or_group(locations)
 
     for group in (title_group, skill_group, location_group):
+        if group:
+            parts.append(group)
+
+    for extra in extras:
+        extra = extra.strip()
+        if extra:
+            parts.append(f"\"{extra}\"")
+
+    return " ".join(parts)
+
+
+def build_pattern_query(primary_title, title_variants, skills, locations, extras, site_filter="site:linkedin.com/in/"):
+    parts = [site_filter]
+
+    title_pattern = build_title_pattern(primary_title, title_variants)
+    skill_group = build_or_group(skills)
+    location_group = build_or_group(locations)
+
+    for group in (title_pattern, skill_group, location_group):
+        if group:
+            parts.append(group)
+
+    for extra in extras:
+        extra = extra.strip()
+        if extra:
+            parts.append(f"\"{extra}\"")
+
+    return " ".join(parts)
+
+
+def build_query_from_title_pattern(title_pattern, skills, locations, extras, site_filter="site:linkedin.com/in/"):
+    parts = [site_filter]
+
+    skill_group = build_or_group(skills)
+    location_group = build_or_group(locations)
+
+    for group in (title_pattern, skill_group, location_group):
         if group:
             parts.append(group)
 

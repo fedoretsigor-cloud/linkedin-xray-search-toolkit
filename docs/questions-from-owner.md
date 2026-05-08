@@ -18,7 +18,7 @@ Owner concern:
 - The `I understood...` block may not be useful.
 - `Must have` and `Nice to have` should likely become short bullet points.
 
-Current status: Open.
+Current status: Implemented first UI cleanup.
 
 Initial direction:
 
@@ -26,6 +26,14 @@ Initial direction:
 - Keep role, location, seniority, and domain visible.
 - Show must-have and nice-to-have as short bullets.
 - Consider hiding/removing the `I understood...` text from the main UI.
+
+Implementation note:
+
+- The main Requirement Brief UI now hides the long `I understood...` narrative.
+- Must-have and nice-to-have items are shown as short, capped bullets.
+- Must-have anchors now use compact canonical search terms from Search Intent.
+- Nice-to-have and full extracted requirement details are hidden behind expandable sections.
+- Suggested role variants and open questions are also hidden behind expandable sections to keep the left panel lighter.
 
 ### Q2. How are Role variants created?
 
@@ -52,7 +60,7 @@ Owner concern:
 - The logic and reason are not obvious.
 - Confirm whether this is hardcoded or AI-generated.
 
-Current status: Open.
+Current status: Clarified in current behavior.
 
 Current implementation notes:
 
@@ -60,6 +68,10 @@ Current implementation notes:
 - Search then treats `Role + Role Variants` as title inputs.
 - This is deterministic UI logic, not another AI call.
 - The variants themselves come from the requirement model.
+
+Implementation note:
+
+- The Search Strategy Preview now explains that `Role` is the main role and variants are searched as OR alternatives.
 
 ### Q4. How are Must-have search anchors, Domain keywords, and Query groups created?
 
@@ -84,14 +96,20 @@ Owner concern:
 - The UI can show 8-10 tech stack values.
 - It is unclear whether all are actually used, especially with a 20-candidate search limit.
 
-Current status: Needs UI clarification.
+Current status: UI clarification started.
 
 Current implementation notes:
 
-- Backend builds base queries across role titles, skill groups, locations, and sources.
-- For a 20-candidate limit, each base query gets one provider query variant, but all base queries are still run.
+- Backend now groups role titles into one OR title group where query length allows.
+- Backend still builds planned searches across skill groups, locations, and sources.
+- For a 20-candidate limit, each planned search gets one provider query variant, but all planned searches can still run.
 - Final results are deduped and sliced to the requested candidate limit.
 - The UI should make the difference clear between `query groups used for search` and `final result limit`.
+
+Implementation note:
+
+- The Search Strategy Preview now says all planned searches can run, then final candidates are deduped and capped by Results Limit.
+- `Remote + Country/City` is also cleaned before query generation, so `Remote Brazil` searches for `Brazil` while retaining strict location filtering.
 
 ### Q6. Location must be strict
 
@@ -105,8 +123,8 @@ Current status: Decision accepted, implementation in progress.
 Current implementation notes:
 
 - Location is currently included in the X-Ray query.
-- There is no strict post-search location filter yet.
-- Search providers can still return candidates outside the requested location because query matching is fuzzy.
+- Strict post-search location filtering has started.
+- Search providers can still return candidates outside the requested location, but those rows should be removed when strict location evidence is missing.
 
 Initial direction:
 
@@ -122,6 +140,7 @@ Decision:
 - `Remote + Country/City` means "candidate must match that concrete country/city; remote is only work format".
 - This applies to every country/city, not only Ukraine or France.
 - When `remote` is paired with a concrete country/city, strict matching ignores `remote` and requires only concrete location evidence.
+- When building the outgoing search query, `Remote + Country/City` is reduced to the concrete country/city.
 
 ### Q7. Are Role and Role Variants all used in search?
 
@@ -129,12 +148,27 @@ Owner concern:
 
 - Need clarity on whether `Role` and all `Role Variants` are used.
 
-Current status: Needs UI explanation.
+Current status: Implemented first explanation.
 
 Current implementation notes:
 
 - Yes, backend merges `role` and `titles` through `merge_role_titles`.
-- Each title currently becomes a separate title input for query generation.
+- The primary role is kept first.
+- Role variants now become OR alternatives in the title group when query length allows.
+
+Implementation note:
+
+- Query generation now keeps `Role` as the primary role and searches role variants as OR alternatives in the title group.
+- The title pattern is now `Role` first, followed by variants as an OR group, for example `"Automation" ("Engineer" OR "QA" OR "Tester" OR "SDET")`.
+- Added a semantic role pattern layer for common IT role families.
+- For QA/Test Automation roles, literal titles like `Test Automation Engineer` are converted into a broader pattern: `"Automation" ("Engineer" OR "QA" OR "Tester" OR "Test Engineer" OR "SDET")`.
+- Family selection now uses `Role`, `Role Variants`, and the extracted requirement/search-intent context, so weak titles can still be corrected by strong requirement signals.
+- UI labels changed to `Detected Role` and `Role Signals` to make it clear these fields feed the semantic role planner.
+- Manual edits to Detected Role, Role Signals, tech groups, locations, sources, and result limits now refresh the Search Strategy Preview immediately.
+- Added an explicit `Update Strategy Preview` button for cases where the preview is hidden or the user wants an intentional recalculation after manual edits.
+- Manual Detected Role / Role Signals matches now override old requirement context when selecting a semantic family.
+- The update button now shows a compact inline family/pattern status directly under the Role Signals block.
+- Search Strategy Preview now keeps only a compact summary visible and hides detailed sections behind expandable blocks.
 
 ### Q8. Why not make Role primary and Role Variants OR alternatives?
 
@@ -143,12 +177,18 @@ Owner concern:
 - Role should be the main value.
 - Role variants should be alternatives under OR.
 
-Current status: Open design decision.
+Current status: Implemented first backend version.
 
 Current implementation notes:
 
-- Current query generation creates separate queries per title.
-- It does not currently build one grouped title expression like `("Role" OR "Variant 1" OR "Variant 2")`.
+- Query generation now builds one grouped title expression like `("Role" OR "Variant 1" OR "Variant 2")` where query length allows.
+
+Implementation note:
+
+- Backend query generation now builds a semantic title pattern where possible.
+- Recognized role families use curated core terms and role terms instead of literal long titles.
+- Family selection scores title triggers higher than context triggers, but context can still select a family when title extraction is too generic.
+- If the grouped query would exceed provider length limits, variants are trimmed before dropping the query.
 
 Initial direction:
 
@@ -163,13 +203,19 @@ Owner concern:
 - Root constraints with AND.
 - Additional variants with OR.
 
-Current status: Open design decision.
+Current status: Partially implemented without search modes.
 
 Current implementation notes:
 
 - Current provider query string effectively combines groups with AND-like spacing and OR inside groups.
-- The app splits into multiple base queries to avoid overly long queries and to improve recall.
-- Need a clearer query planner that can decide between one strict query and multiple recall-expansion queries.
+- The app still splits skill groups into multiple planned searches to avoid overly long queries and improve recall.
+- Need a clearer query planner that can decide between one strict query and multiple recall-expansion queries later.
+
+Implementation note:
+
+- Role variants are now grouped with OR after the required Role term.
+- Skills still run as compact query groups to avoid long provider queries and preserve recall.
+- Explicit `strict / balanced / broad` modes are intentionally not implemented yet.
 
 Initial direction:
 

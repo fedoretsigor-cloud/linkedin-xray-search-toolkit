@@ -68,6 +68,69 @@ const GENERIC_SEARCH_PHRASES = new Set([
   "testing",
 ]);
 
+const ROLE_PATTERN_FAMILIES = [
+  {
+    family: "QA Automation",
+    triggers: ["qa", "quality assurance", "test automation", "automation test", "automated test", "sdet", "tester"],
+    coreTerms: ["Automation"],
+    roleTerms: ["Engineer", "QA", "Tester", "Test Engineer", "SDET"],
+  },
+  {
+    family: "Java Backend",
+    triggers: ["java backend", "backend java", "java developer", "java engineer"],
+    coreTerms: ["Java"],
+    roleTerms: ["Backend", "Back End", "Engineer", "Developer", "Software Engineer"],
+  },
+  {
+    family: "Frontend",
+    triggers: ["frontend", "front end", "react", "angular", "vue"],
+    coreTerms: ["Frontend", "Front End"],
+    roleTerms: ["Engineer", "Developer", "Software Engineer"],
+  },
+  {
+    family: "Fullstack",
+    triggers: ["fullstack", "full stack"],
+    coreTerms: ["Fullstack", "Full Stack"],
+    roleTerms: ["Engineer", "Developer", "Software Engineer"],
+  },
+  {
+    family: "iOS",
+    triggers: ["ios", "swift", "iphone"],
+    coreTerms: ["iOS", "Swift"],
+    roleTerms: ["Engineer", "Developer", "Mobile Engineer", "Mobile Developer"],
+  },
+  {
+    family: "Android",
+    triggers: ["android", "kotlin"],
+    coreTerms: ["Android", "Kotlin"],
+    roleTerms: ["Engineer", "Developer", "Mobile Engineer", "Mobile Developer"],
+  },
+  {
+    family: "DevOps / SRE",
+    triggers: ["devops", "sre", "site reliability", "platform engineer", "infrastructure"],
+    coreTerms: ["DevOps", "SRE", "Site Reliability"],
+    roleTerms: ["Engineer", "Platform Engineer", "Infrastructure Engineer"],
+  },
+  {
+    family: "Data Engineer",
+    triggers: ["data engineer", "etl", "pipeline engineer", "analytics engineer"],
+    coreTerms: ["Data"],
+    roleTerms: ["Engineer", "ETL", "Pipeline Engineer", "Analytics Engineer"],
+  },
+  {
+    family: "ML / AI Engineer",
+    triggers: ["machine learning", "ml engineer", "ai engineer", "applied scientist"],
+    coreTerms: ["Machine Learning", "ML", "AI"],
+    roleTerms: ["Engineer", "Applied Scientist", "Research Engineer"],
+  },
+  {
+    family: "Embedded",
+    triggers: ["embedded", "firmware"],
+    coreTerms: ["Embedded"],
+    roleTerms: ["Engineer", "Software Engineer", "Firmware Engineer"],
+  },
+];
+
 function lines(value) {
   return value
     .split(/\r?\n/)
@@ -131,6 +194,26 @@ function renderList(items, emptyText) {
   return values.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
 }
 
+function renderLimitedList(items, emptyText, limit = 5) {
+  const values = Array.isArray(items) ? items.filter(Boolean).slice(0, limit) : [];
+  if (!values.length) {
+    return `<li>${escapeHtml(emptyText)}</li>`;
+  }
+  return values.map((item) => `<li>${escapeHtml(shortenSearchPhrase(item, 95))}</li>`).join("");
+}
+
+function renderAnchorChips(items, emptyText, limit = 8) {
+  const values = Array.isArray(items) ? dedupeTextValues(items).filter(Boolean).slice(0, limit) : [];
+  if (!values.length) {
+    return `<p class="field-note">${escapeHtml(emptyText)}</p>`;
+  }
+  return `
+    <div class="anchor-chips">
+      ${values.map((item) => `<span class="anchor-chip">${escapeHtml(shortenSearchPhrase(item, 32))}</span>`).join("")}
+    </div>
+  `;
+}
+
 function renderPlainList(items, emptyText) {
   return `<ul>${renderList(items, emptyText)}</ul>`;
 }
@@ -180,6 +263,33 @@ function syncRoleVariantsField() {
   field.value = state.roleVariants.join("\n");
 }
 
+function refreshStrategyPreviewIfVisible() {
+  const container = document.getElementById("search-strategy-preview");
+  if (!container || container.classList.contains("hidden")) return;
+  renderSearchStrategyPreview();
+}
+
+function showStrategyPreview() {
+  renderSearchStrategyPreview();
+  setRequirementMessage("Strategy preview updated. Search will use the current fields.");
+}
+
+function renderStrategyPreviewStatus(strategy) {
+  const node = document.getElementById("strategy-preview-status");
+  if (!node) return;
+  if (!strategy) {
+    node.classList.add("hidden");
+    node.innerHTML = "";
+    return;
+  }
+  node.innerHTML = `
+    <strong>${escapeHtml(strategy.role_pattern_family || "Custom role")}</strong>
+    <span> ${escapeHtml(strategy.role_pattern_mode || "fallback")}, ${escapeHtml(strategy.role_pattern_confidence || "low")} confidence</span>
+    <code>${escapeHtml(strategy.title_pattern || "No role pattern selected.")}</code>
+  `;
+  node.classList.remove("hidden");
+}
+
 function renderRoleVariants() {
   const container = document.getElementById("role-variant-chips");
   if (!container) return;
@@ -202,7 +312,10 @@ function renderRoleVariants() {
     .join("");
 
   container.querySelectorAll("button[data-variant]").forEach((button) => {
-    button.addEventListener("click", () => removeRoleVariant(button.dataset.variant));
+    button.addEventListener("click", () => {
+      removeRoleVariant(button.dataset.variant);
+      refreshStrategyPreviewIfVisible();
+    });
   });
 }
 
@@ -254,6 +367,7 @@ function applyRolePreset(preset) {
   if (preset.stacks?.length) {
     form.tech_groups.value = preset.stacks.join("\n");
   }
+  refreshStrategyPreviewIfVisible();
 }
 
 function initializeRolePresets() {
@@ -261,6 +375,7 @@ function initializeRolePresets() {
   const presetSelect = document.getElementById("role-preset-select");
   const addButton = document.getElementById("add-role-variant");
   const variantInput = document.getElementById("role-variant-input");
+  const updateStrategyButton = document.getElementById("update-strategy-preview");
 
   populateRoleGroups();
   populateRolePresets("");
@@ -279,6 +394,7 @@ function initializeRolePresets() {
     addRoleVariant(variantInput.value);
     variantInput.value = "";
     variantInput.focus();
+    refreshStrategyPreviewIfVisible();
   });
 
   variantInput?.addEventListener("keydown", (event) => {
@@ -286,7 +402,10 @@ function initializeRolePresets() {
     event.preventDefault();
     addRoleVariant(variantInput.value);
     variantInput.value = "";
+    refreshStrategyPreviewIfVisible();
   });
+
+  updateStrategyButton?.addEventListener("click", showStrategyPreview);
 }
 
 function redirectToLogin(payload) {
@@ -798,18 +917,22 @@ function renderRequirementBrief(result) {
   state.confirmedBrief = null;
   state.strategyPreview = null;
   state.currentProjectId = "";
-  const mustHave = renderList(brief.must_have_skills, "No must-have skills extracted.");
-  const niceToHave = renderList(brief.nice_to_have_skills, "No nice-to-have skills extracted.");
-  const questions = renderList(brief.open_questions, "No open questions.");
-  const variants = renderList(brief.role_variants, "No role variants extracted.");
+  const intent = buildSearchIntentFromBrief(brief);
+  const mustHaveAnchors = renderAnchorChips(
+    [...(intent.must_have_keywords || []), ...(intent.tool_keywords || [])],
+    "No short search anchors extracted."
+  );
+  const niceToHave = renderLimitedList(brief.nice_to_have_skills, "No nice-to-have skills extracted.", 5);
+  const mustHaveDetails = renderLimitedList(brief.must_have_skills, "No must-have details extracted.", 12);
+  const questions = renderLimitedList(brief.open_questions, "No open questions.");
+  const variants = renderLimitedList(brief.role_variants, "No role variants extracted.", 4);
 
   container.classList.remove("hidden");
   container.innerHTML = `
     <div class="requirement-brief-header">
-      <strong>Agent understanding</strong>
+      <strong>Search brief draft</strong>
       <span>${escapeHtml(brief.confidence || "low")} confidence</span>
     </div>
-    <p>${escapeHtml(brief.human_summary || "I extracted a draft sourcing brief.")}</p>
     <dl class="brief-grid">
       <div><dt>Role</dt><dd>${escapeHtml(brief.role || "-")}</dd></div>
       <div><dt>Seniority</dt><dd>${escapeHtml(brief.seniority || "-")}</dd></div>
@@ -818,21 +941,32 @@ function renderRequirementBrief(result) {
       <div><dt>Domain</dt><dd>${escapeHtml(brief.domain || "-")}</dd></div>
     </dl>
     <div class="brief-section">
-      <h4>Must-have skills</h4>
-      <ul>${mustHave}</ul>
+      <h4>Must-have anchors</h4>
+      ${mustHaveAnchors}
     </div>
-    <div class="brief-section">
-      <h4>Nice-to-have skills</h4>
+    <details class="brief-details">
+      <summary>Nice-to-have anchors</summary>
       <ul>${niceToHave}</ul>
-    </div>
-    <div class="brief-section">
-      <h4>Role variants</h4>
+    </details>
+    <details class="brief-details">
+      <summary>Full extracted requirements</summary>
+      <div class="brief-section">
+        <h4>Must-have details</h4>
+        <ul>${mustHaveDetails}</ul>
+      </div>
+      <div class="brief-section">
+        <h4>Nice-to-have details</h4>
+        <ul>${niceToHave}</ul>
+      </div>
+    </details>
+    <details class="brief-details">
+      <summary>Suggested role variants</summary>
       <ul>${variants}</ul>
-    </div>
-    <div class="brief-section">
-      <h4>Questions for human confirmation</h4>
+    </details>
+    <details class="brief-details">
+      <summary>Open questions</summary>
       <ul>${questions}</ul>
-    </div>
+    </details>
     <button type="button" class="primary-btn apply-brief-btn" id="apply-requirement-brief">Apply to Search Builder</button>
     <div id="search-strategy-preview" class="strategy-preview hidden"></div>
   `;
@@ -873,37 +1007,131 @@ function buildConfirmedBriefFromForm() {
   };
 }
 
+function buildQuotedOrGroup(values) {
+  const cleaned = dedupeTextValues(values).filter(Boolean);
+  if (!cleaned.length) return "";
+  if (cleaned.length === 1) return `"${cleaned[0]}"`;
+  return `(${cleaned.map((value) => `"${value}"`).join(" OR ")})`;
+}
+
+function buildTitlePattern(primaryRole, roleVariants) {
+  const primary = cleanSearchPhrase(primaryRole);
+  const variants = dedupeTextValues(roleVariants).filter(Boolean);
+  if (primary && variants.length) return `"${primary}" ${buildQuotedOrGroup(variants)}`;
+  if (primary) return `"${primary}"`;
+  return buildQuotedOrGroup(variants);
+}
+
+function flattenRolePatternContext(value) {
+  if (!value) return [];
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(flattenRolePatternContext);
+  if (typeof value === "object") return Object.values(value).flatMap(flattenRolePatternContext);
+  return [String(value)];
+}
+
+function buildSemanticRolePattern(primaryRole, roleVariants, context = null) {
+  const titleText = [primaryRole, ...roleVariants].join(" ").toLowerCase().replaceAll("-", " ").replaceAll("/", " ");
+  const contextText = flattenRolePatternContext(context).join(" ").toLowerCase().replaceAll("-", " ").replaceAll("/", " ");
+  let titleMatched = null;
+  let titleScore = 0;
+  let contextMatched = null;
+  let contextScore = 0;
+  ROLE_PATTERN_FAMILIES.forEach((family) => {
+    const titleHits = family.triggers.filter((trigger) => titleText.includes(trigger));
+    const contextHits = family.triggers.filter((trigger) => contextText.includes(trigger));
+    if (titleHits.length > titleScore) {
+      titleMatched = family;
+      titleScore = titleHits.length;
+    } else if (!titleHits.length && contextHits.length > contextScore) {
+      contextMatched = family;
+      contextScore = contextHits.length;
+    }
+  });
+  const matched = titleMatched || contextMatched;
+  if (!matched) {
+    return {
+      family: "Custom role",
+      mode: "fallback",
+      confidence: "low",
+      coreTerms: [primaryRole].filter(Boolean),
+      roleTerms: roleVariants,
+      titlePattern: buildTitlePattern(primaryRole, roleVariants),
+    };
+  }
+  return {
+    family: matched.family,
+    mode: "semantic",
+    confidence: titleMatched ? "high" : "medium",
+    coreTerms: matched.coreTerms,
+    roleTerms: matched.roleTerms,
+    titlePattern: `${buildQuotedOrGroup(matched.coreTerms)} ${buildQuotedOrGroup(matched.roleTerms)}`.trim(),
+  };
+}
+
+function buildLocationQueryValues(locations) {
+  return dedupeTextValues(
+    locations.map((location) => {
+      const normalized = cleanSearchPhrase(location).toLowerCase().replaceAll("-", " ").replaceAll("/", " ");
+      const stripped = normalized
+        .replace(/\bwork from home\b/g, " ")
+        .replace(/\bremote work\b/g, " ")
+        .replace(/\bremotely\b/g, " ")
+        .replace(/\bremote\b/g, " ")
+        .replace(/\bwfh\b/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (stripped) return stripped;
+      return /\b(remote|remotely|remote work|work from home|wfh)\b/.test(normalized) ? "remote" : normalized;
+    })
+  ).filter(Boolean);
+}
+
 function buildStrategyPreviewFromForm() {
   const form = document.getElementById("search-form");
   syncRoleVariantsField();
-  const titles = [form.role.value.trim(), ...state.roleVariants].filter(Boolean).map((item) => shortenSearchPhrase(item, 80));
+  const primaryRole = shortenSearchPhrase(form.role.value.trim(), 80);
+  const roleVariants = state.roleVariants.filter(Boolean).map((item) => shortenSearchPhrase(item, 80));
+  const titles = dedupeTextValues([primaryRole, ...roleVariants]);
   const searchIntent = buildSearchIntentFromForm(form);
   const skillGroups = searchIntent.skill_groups.length
     ? searchIntent.skill_groups
     : lines(form.tech_groups.value).flatMap((group) => chunkArray(group.split("|").map((item) => shortenSearchPhrase(item, 45)).filter(Boolean), 3));
-  const locations = lines(form.locations.value).map((item) => shortenSearchPhrase(item, 60));
+  const displayLocations = lines(form.locations.value).map((item) => shortenSearchPhrase(item, 60));
+  const locations = buildLocationQueryValues(displayLocations);
   const sources = Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value);
-  const queryCount = Math.max(titles.length, 1) * Math.max(skillGroups.length, 1) * Math.max(locations.length, 1) * Math.max(sources.length, 1);
+  const queryCount = Math.max(skillGroups.length, 1) * Math.max(locations.length, 1) * Math.max(sources.length, 1);
   const sampleQueries = [];
+  const rolePattern = buildSemanticRolePattern(primaryRole, roleVariants, {
+    searchIntent,
+    requirementBrief: state.requirementBrief,
+    techGroups: lines(form.tech_groups.value),
+  });
+  const titlePattern = rolePattern.titlePattern;
 
-  titles.slice(0, 2).forEach((title) => {
-    (skillGroups.length ? skillGroups : [[]]).slice(0, 2).forEach((skills) => {
-      (locations.length ? locations : [""]).slice(0, 1).forEach((location) => {
-        const parts = ['site:linkedin.com/in/'];
-        if (title) parts.push(`"${title}"`);
-        if (skills.length === 1) parts.push(`"${skills[0]}"`);
-        if (skills.length > 1) parts.push(`(${skills.map((skill) => `"${skill}"`).join(" OR ")})`);
-        if (location) parts.push(`"${location}"`);
-        sampleQueries.push(parts.join(" "));
-      });
+  (skillGroups.length ? skillGroups : [[]]).slice(0, 3).forEach((skills) => {
+    (locations.length ? locations : [""]).slice(0, 1).forEach((location) => {
+      const parts = ['site:linkedin.com/in/'];
+      if (titlePattern) parts.push(titlePattern);
+      if (skills.length === 1) parts.push(`"${skills[0]}"`);
+      if (skills.length > 1) parts.push(`(${skills.map((skill) => `"${skill}"`).join(" OR ")})`);
+      if (location) parts.push(`"${location}"`);
+      sampleQueries.push(parts.join(" "));
     });
   });
 
   return {
+    primary_role: primaryRole,
+    role_variants: roleVariants,
+    title_pattern: titlePattern,
+    role_pattern_family: rolePattern.family,
+    role_pattern_mode: rolePattern.mode,
+    role_pattern_confidence: rolePattern.confidence,
     titles,
     skill_groups: skillGroups,
     search_intent: searchIntent,
     locations,
+    display_locations: displayLocations,
     sources,
     query_count: queryCount,
     location_policy: "strict",
@@ -916,36 +1144,53 @@ function renderSearchStrategyPreview() {
   if (!container) return;
   const strategy = buildStrategyPreviewFromForm();
   state.strategyPreview = strategy;
+  renderStrategyPreviewStatus(strategy);
   container.classList.remove("hidden");
   container.innerHTML = `
     <div class="requirement-brief-header">
       <strong>Search strategy preview</strong>
-      <span>${strategy.query_count} base queries</span>
+      <span>${strategy.query_count} planned searches</span>
     </div>
-    <div class="brief-section">
-      <h4>Role titles</h4>
-      <ul>${renderList(strategy.titles, "No titles selected.")}</ul>
+    <div class="strategy-summary">
+      <strong>${escapeHtml(strategy.role_pattern_family || "Custom role")}</strong>
+      <code>${escapeHtml(strategy.title_pattern || "No role selected.")}</code>
     </div>
-    <div class="brief-section">
-      <h4>Location policy</h4>
-      <ul><li>Strict: candidates must show target location evidence in indexed text.</li></ul>
-    </div>
-    <div class="brief-section">
-      <h4>Must-have search anchors</h4>
+    <details class="brief-details">
+      <summary>Role logic</summary>
+      <ul>
+        <li>Family: ${escapeHtml(strategy.role_pattern_family || "Custom role")} (${escapeHtml(strategy.role_pattern_mode || "fallback")}, ${escapeHtml(strategy.role_pattern_confidence || "low")} confidence)</li>
+        <li>Pattern: ${escapeHtml(strategy.title_pattern || "No role selected.")}</li>
+        <li>Family is recalculated from Detected Role, Role Signals, and extracted requirement/search-intent signals.</li>
+        <li>Your edits affect this pattern immediately; if no semantic family matches, the edited role/signals are searched directly.</li>
+      </ul>
+    </details>
+    <details class="brief-details">
+      <summary>Location policy</summary>
+      <ul>
+        <li>Strict: candidates must show target location evidence in indexed text.</li>
+        <li>Search location: ${escapeHtml(strategy.locations.length ? strategy.locations.join(" | ") : "No location selected.")}</li>
+      </ul>
+    </details>
+    <details class="brief-details">
+      <summary>Must-have search anchors</summary>
       <ul>${renderList(strategy.search_intent.must_have_keywords, "No must-have anchors selected.")}</ul>
-    </div>
-    <div class="brief-section">
-      <h4>Domain keywords</h4>
+    </details>
+    <details class="brief-details">
+      <summary>Domain keywords</summary>
       <ul>${renderList(strategy.search_intent.domain_keywords, "No domain keywords selected.")}</ul>
-    </div>
-    <div class="brief-section">
-      <h4>Query groups</h4>
+    </details>
+    <details class="brief-details">
+      <summary>Query groups</summary>
       <ul>${renderList(strategy.skill_groups.map((group) => group.join(" | ")), "No skills selected.")}</ul>
-    </div>
-    <div class="brief-section">
-      <h4>Sample queries</h4>
+    </details>
+    <details class="brief-details">
+      <summary>Result limit</summary>
+      <ul><li>All planned searches can run; final candidate list is deduped and capped by Results Limit.</li></ul>
+    </details>
+    <details class="brief-details">
+      <summary>Sample queries</summary>
       <ul>${renderList(strategy.sample_queries, "No query examples.")}</ul>
-    </div>
+    </details>
   `;
 }
 
@@ -1309,6 +1554,11 @@ if (logoutForm) {
 if (enforceTabAccess()) {
   initializeRolePresets();
   searchForm.addEventListener("submit", handleSearch);
+  searchForm.addEventListener("input", (event) => {
+    if (event.target?.id === "role-variant-input") return;
+    refreshStrategyPreviewIfVisible();
+  });
+  searchForm.addEventListener("change", refreshStrategyPreviewIfVisible);
   searchButton.addEventListener("click", () => {
     searchForm.requestSubmit();
   });

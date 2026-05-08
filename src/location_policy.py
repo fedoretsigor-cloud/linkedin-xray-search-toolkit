@@ -38,11 +38,10 @@ def build_location_terms(locations):
         normalized = normalize_for_match(location)
         if not normalized:
             continue
-        words = [word for word in normalized.split() if word]
-        if any(word in REMOTE_TERMS for word in words) or normalized in REMOTE_TERMS:
+        if has_remote_marker(normalized):
             # "Remote + Country/City" means the concrete location is strict and
             # "remote" is only work format. This rule applies to every country/city.
-            remainder = " ".join(word for word in words if word not in REMOTE_TERMS)
+            remainder = strip_remote_marker(normalized)
             if remainder:
                 add_location_aliases(terms, remainder)
             else:
@@ -53,6 +52,20 @@ def build_location_terms(locations):
         "terms": dedupe_values(terms),
         "requires_remote": requires_remote,
     }
+
+
+def build_location_query_values(locations):
+    values = []
+    for location in normalize_locations(locations):
+        normalized = normalize_for_match(location)
+        if not normalized:
+            continue
+        if has_remote_marker(normalized):
+            remainder = strip_remote_marker(normalized)
+            values.append(remainder or "remote")
+        else:
+            values.append(normalized)
+    return dedupe_values(values)
 
 
 def row_location_evidence(row):
@@ -122,6 +135,18 @@ def term_matches(term, text):
 
 def normalize_for_match(value):
     return clean_text(value).lower().replace("-", " ").replace("/", " ")
+
+
+def has_remote_marker(value):
+    normalized = normalize_for_match(value)
+    return any(term_matches(term, normalized) for term in REMOTE_TERMS)
+
+
+def strip_remote_marker(value):
+    stripped = normalize_for_match(value)
+    for term in sorted(REMOTE_TERMS, key=len, reverse=True):
+        stripped = re.sub(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", " ", stripped)
+    return clean_text(stripped)
 
 
 def dedupe_values(values):

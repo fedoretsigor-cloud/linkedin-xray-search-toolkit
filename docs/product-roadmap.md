@@ -115,6 +115,7 @@ Remaining work:
 
 - Add a true revision flow later: human feedback -> revised structured brief.
 - Add clearer UI grouping so the left panel does not become too heavy.
+- Continue polishing the compact Search Brief UI based on real owner testing.
 
 ### Phase 3: Search Strategy Agent
 
@@ -139,6 +140,11 @@ Current implementation:
 - Query length is kept under Tavily limits.
 - Tavily errors now return readable JSON messages.
 - Search strategy preview is shown before search.
+- Role is treated as the required primary title term, and role variants are grouped as OR alternatives where query length allows.
+- Search strategy preview now uses "planned searches" language instead of unclear "base queries".
+- `Remote + Country/City` inputs are reduced to the concrete country/city in outgoing search queries, while strict location filtering remains active.
+- Added the first semantic role pattern layer for common IT role families, starting with QA Automation, Java Backend, Frontend, Fullstack, iOS, Android, DevOps/SRE, Data, ML/AI, and Embedded.
+- Semantic role family selection now uses role/title signals plus extracted requirement/search-intent context.
 - The run stores `search_strategy`.
 - The sourcing project stores the latest `search_strategy`.
 
@@ -146,7 +152,7 @@ Remaining work:
 
 - Explain recall vs precision tradeoffs.
 - Allow the human to approve or edit query groups before running search.
-- Improve wording: replace "base queries" with a clearer user-facing label and breakdown.
+- Improve query planner clarity further after testing real searches.
 
 ### Phase 4: Candidate Search
 
@@ -504,6 +510,18 @@ Completed:
 - Apply brief to Search Builder added.
 - Tavily query compression added to prevent query length errors.
 - Search strategy preview added.
+- Requirement Brief main UI simplified into compact bullets.
+- Role variants are now searched as OR alternatives after the required main role term, instead of multiplying separate title queries.
+- Semantic role patterns now convert recognized literal titles into broader searchable patterns, for example QA Automation -> `"Automation" ("Engineer" OR "QA" OR "Tester" OR "SDET")`.
+- Semantic family detection now considers extracted requirement context, not only Role and Role Variants.
+- Search Builder now labels role fields as Detected Role and Role Signals, and manual edits immediately refresh the strategy preview.
+- Added an explicit Update Strategy Preview action for manual search-builder changes.
+- Manual role/signal matches now override older extracted requirement context in semantic family selection, with inline family/pattern feedback under the update button.
+- Search Strategy Preview now uses a compact summary plus expandable detail sections.
+- Search Strategy Preview now explains role logic, strict location, planned searches, and result-limit behavior.
+- Remote plus concrete location now searches the concrete location instead of the literal remote phrase.
+- Requirement Brief now shows compact canonical search-anchor chips and hides long extracted text in expandable sections.
+- Requirement Brief now also hides suggested role variants and open questions in expandable sections.
 - Confirmed brief is saved automatically from current fields at search time.
 - Search Intent Builder added so long human requirements become concise searchable anchors.
 - Strict location policy started: location now requires indexed evidence, not only query context.

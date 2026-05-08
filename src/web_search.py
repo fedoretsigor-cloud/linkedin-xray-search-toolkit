@@ -3,6 +3,8 @@ import uuid
 from datetime import datetime, timezone
 
 from src.enrichment import build_candidate_analysis
+from src.location_policy import build_location_query_values
+from src.role_pattern_builder import build_role_pattern
 from src.scoring import score_candidate
 from src.search_intent import build_search_intent
 from src.text_utils import clean_text
@@ -73,19 +75,32 @@ def build_web_search_request(payload, default_results):
         [part.strip() for part in group.split("|") if part.strip()]
         for group in search["tech_groups"]
     ] or [[]]
+    role_pattern = build_role_pattern(
+        search["role"],
+        search["titles"][1:],
+        context={
+            "confirmed_brief": confirmed_brief,
+            "requirement_brief": search.get("requirement_brief"),
+            "search_intent": search_intent,
+            "tech_groups": search["tech_groups"],
+        },
+    )
 
     search_input = {
         "titles": search["titles"],
         "skill_groups": skill_groups,
-        "locations": search["locations"] or [""],
+        "locations": build_location_query_values(search["locations"]) or [""],
+        "display_locations": search["locations"],
         "location_policy": search["location_policy"],
         "extras": [search["availability"]] if search["availability"] else [],
         "source_sites": search["sources"] or ["linkedin"],
         "num": requested_num,
         "provider": None,
         "search_intent": search_intent,
+        "role_pattern": role_pattern,
     }
     search["search_intent"] = search_intent
+    search["role_pattern"] = role_pattern
     search["stack_summary"] = ", ".join(search["tech_groups"])
     return search, search_input
 
