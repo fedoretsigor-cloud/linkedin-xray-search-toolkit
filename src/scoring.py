@@ -52,6 +52,7 @@ def score_candidate(candidate, search):
     role = clean_text(candidate.get("role", ""))
     technology = clean_text(candidate.get("technology", ""))
     location = clean_text(candidate.get("location", ""))
+    location_match = candidate.get("location_match", {}) or {}
     profile_name = clean_text(candidate.get("profile_name", ""))
 
     if source_site == "linkedin" and candidate.get("is_linkedin_profile"):
@@ -100,12 +101,15 @@ def score_candidate(candidate, search):
         risks.append("No stack keywords were provided for scoring")
 
     if location:
-        if _contains_phrase(description_lower, location):
+        if location_match.get("matched"):
+            score += 14
+            matched_terms = ", ".join(location_match.get("matched_terms") or [location])
+            reasons.append(f"Indexed text matches strict location: {matched_terms}")
+        elif _contains_phrase(description_lower, location):
             score += 14
             reasons.append(f"Description mentions target location: {location}")
         else:
-            score += 5
-            risks.append("Location comes from query context, not indexed profile text")
+            risks.append("Target location is not clearly visible in indexed profile text")
 
     context_hits = [marker for marker in PROFILE_CONTEXT_MARKERS if marker in description_lower]
     if len(description) >= 80:

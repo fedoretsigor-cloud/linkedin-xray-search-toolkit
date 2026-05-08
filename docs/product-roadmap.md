@@ -483,9 +483,11 @@ The immediate next architectural direction is to evolve the current search app i
 
 The conversational agent idea is valuable and should remain in the roadmap. It should be implemented as a later interface layer over stable workflow actions, not as an early replacement for structured screens.
 
+Owner search-engine questions are tracked in `docs/questions-from-owner.md` under the marker "Questions from owner". Use that file as the working discussion log before promoting decisions into this roadmap.
+
 ## Progress Snapshot
 
-Last updated: 2026-05-07.
+Last updated: 2026-05-08.
 
 Completed:
 
@@ -504,6 +506,7 @@ Completed:
 - Search strategy preview added.
 - Confirmed brief is saved automatically from current fields at search time.
 - Search Intent Builder added so long human requirements become concise searchable anchors.
+- Strict location policy started: location now requires indexed evidence, not only query context.
 - Search progress active-wait UX improved for long-running searches.
 - Sourcing project persistence added.
 - Search runs are linked to sourcing projects.
@@ -514,9 +517,11 @@ Completed:
 
 In progress:
 
+- Owner-led search-engine review.
+- Strict location filtering and UX validation.
 - Resume review UX.
 - Frontend simplification so the left panel stays usable as the workflow grows.
 
 Next recommended product step:
 
-- Test Resume Review with real PDF/DOCX files, then polish the right-panel layout and candidate review status indicators.
+- Validate strict location filtering on real searches, then improve query planner clarity.

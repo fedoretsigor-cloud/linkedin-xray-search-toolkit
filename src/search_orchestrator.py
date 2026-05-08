@@ -2,6 +2,7 @@ import time
 
 from src.dedupe import dedupe_rows
 from src.devpost_normalizer import normalize_devpost_rows
+from src.location_policy import annotate_location_match, row_matches_strict_locations
 from src.tavily_client import search_tavily
 from src.tavily_normalizer import normalize_tavily_items
 from src.tavily_query_builder import build_tavily_query_variants
@@ -59,6 +60,8 @@ def run_search(
     all_rows = []
     started_at = time.time()
     per_request_limit = min(requested_count, 20)
+    location_policy = search_input.get("location_policy") or "strict"
+    target_locations = search_input.get("locations", [])
 
     for index, query_info in enumerate(expanded_queries, start=1):
         if progress_callback:
@@ -83,6 +86,9 @@ def run_search(
 
         rows = attach_query_context(rows, query_info)
         rows = normalize_devpost_rows(rows)
+        rows = [annotate_location_match(row, target_locations) for row in rows]
+        if location_policy == "strict":
+            rows = [row for row in rows if row_matches_strict_locations(row, target_locations)]
         all_rows.extend([row for row in rows if row_filter(row)])
 
     rows = dedupe_rows(all_rows)[:requested_count]

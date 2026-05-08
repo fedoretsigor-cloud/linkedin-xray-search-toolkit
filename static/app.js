@@ -867,6 +867,7 @@ function buildConfirmedBriefFromForm() {
     tech_groups: lines(form.tech_groups.value),
     search_intent: searchIntent,
     locations: lines(form.locations.value),
+    location_policy: "strict",
     sources: Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value),
     results_limit: Number(form.num.value),
   };
@@ -905,6 +906,7 @@ function buildStrategyPreviewFromForm() {
     locations,
     sources,
     query_count: queryCount,
+    location_policy: "strict",
     sample_queries: sampleQueries.slice(0, 4),
   };
 }
@@ -923,6 +925,10 @@ function renderSearchStrategyPreview() {
     <div class="brief-section">
       <h4>Role titles</h4>
       <ul>${renderList(strategy.titles, "No titles selected.")}</ul>
+    </div>
+    <div class="brief-section">
+      <h4>Location policy</h4>
+      <ul><li>Strict: candidates must show target location evidence in indexed text.</li></ul>
     </div>
     <div class="brief-section">
       <h4>Must-have search anchors</h4>
@@ -1145,7 +1151,8 @@ function renderResults(run) {
   state.resumeReviews = {};
   const meta = document.getElementById("results-meta");
   const projectCopy = run.project_id ? ` - project ${run.project_id}` : "";
-  meta.textContent = `${run.candidates.length} candidates - ${run.queries_count} queries - ${run.duration_seconds}s${projectCopy}`;
+  const locationPolicy = run.search_strategy?.location_policy === "strict" ? " - strict location" : "";
+  meta.textContent = `${run.candidates.length} candidates - ${run.queries_count} queries - ${run.duration_seconds}s${locationPolicy}${projectCopy}`;
 
   const empty = document.getElementById("results-state");
   const wrapper = document.getElementById("results-table-wrapper");
@@ -1234,6 +1241,7 @@ async function handleSearch(event) {
     titles: lines(form.titles.value),
     tech_groups: lines(form.tech_groups.value),
     locations: lines(form.locations.value),
+    location_policy: "strict",
     experience: form.experience.value,
     availability: form.availability.value,
     num: Number(form.num.value),

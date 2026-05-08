@@ -84,6 +84,7 @@ def summarize_search_strategy(search_input, queries):
         "skill_groups": compacted.get("skill_groups", []),
         "search_intent": search_input.get("search_intent", {}),
         "locations": compacted.get("locations", []),
+        "location_policy": search_input.get("location_policy", "strict"),
         "sources": compacted.get("source_sites", []),
         "query_count": len(queries),
         "sample_queries": [item.get("query", "") for item in queries[:5]],
