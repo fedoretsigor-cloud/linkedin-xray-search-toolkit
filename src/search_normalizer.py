@@ -277,7 +277,6 @@ def normalize_serpapi_items(query, payload):
         )
     return normalized
 
-
 def normalize_bing_serpapi_items(query, payload):
     items = payload.get("organic_results", [])
     normalized = []
@@ -342,6 +341,40 @@ def normalize_serper_items(query, payload):
                 "short_description": description,
                 "location": extract_profile_location(description, extract_name(title)),
                 "result_position": item.get("position", ""),
+            }
+        )
+    return normalized
+
+
+def compact_result_description(*values, max_length=1400):
+    description = clean_text(" ".join(clean_text(value) for value in values if clean_text(value)))
+    if len(description) <= max_length:
+        return description
+    return clean_text(description[:max_length].rsplit(" ", 1)[0])
+
+
+def normalize_you_items(query, payload):
+    items = payload.get("results", {}).get("web", [])
+    normalized = []
+    for index, item in enumerate(items, start=1):
+        title = clean_text(item.get("title", ""))
+        link = item.get("url", "")
+        snippets = item.get("snippets") or []
+        description = compact_result_description(
+            item.get("description", ""),
+            " ".join(snippet for snippet in snippets if isinstance(snippet, str)),
+        )
+        linkedin_meta = extract_linkedin_metadata(link)
+        normalized.append(
+            {
+                "search_query": clean_text(query),
+                "profile_name": extract_name(title),
+                "result_title": title,
+                "profile_url": link,
+                "is_linkedin_profile": linkedin_meta["is_profile"],
+                "short_description": description,
+                "location": extract_profile_location(description, extract_name(title)),
+                "result_position": index,
             }
         )
     return normalized

@@ -645,6 +645,36 @@ h1, h2, h3, h4, p { margin-top: 0; }
   line-height: 1.45;
 }
 
+.search-diagnostics {
+  display: none;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 0 0 16px;
+}
+.search-diagnostics.hidden {
+  display: none;
+}
+.diagnostic-chip {
+  border: 1px solid rgba(61, 217, 196, 0.18);
+  border-radius: 16px;
+  padding: 10px 12px;
+  background:
+    linear-gradient(135deg, rgba(61, 217, 196, 0.1), rgba(74, 141, 255, 0.06)),
+    rgba(12, 22, 40, 0.56);
+}
+.diagnostic-chip strong {
+  display: block;
+  color: var(--text);
+  font-size: 18px;
+}
+.diagnostic-chip span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .results-table {
   width: 100%;
   border-collapse: collapse;

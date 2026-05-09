@@ -26,7 +26,7 @@ def parse_args():
     parser.add_argument("--titles-file", default=None)
     parser.add_argument("--skills-file", default=None)
     parser.add_argument("--locations-file", default=None)
-    parser.add_argument("--provider", choices=["serpapi", "bing_serpapi", "serper", "brave", "tavily", "hybrid"], default=None)
+    parser.add_argument("--provider", choices=["serpapi", "bing_serpapi", "serper", "brave", "tavily", "you", "hybrid"], default=None)
     parser.add_argument(
         "--source-site",
         action="append",

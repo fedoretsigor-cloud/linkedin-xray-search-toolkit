@@ -14,7 +14,8 @@ SEARCH_DEPTH_PROVIDERS = {
     "standard": ["tavily"],
     "medium": ["tavily", "bing_serpapi"],
     "extended": ["tavily", "bing_serpapi", "serpapi"],
-    "max": ["tavily", "bing_serpapi", "serpapi", "serper"],
+    "max": ["tavily", "bing_serpapi", "serpapi", "serper", "you"],
+    "you": ["you"],
 }
 
 

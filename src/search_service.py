@@ -11,8 +11,8 @@ from dotenv import load_dotenv
 from src.facebook_filter import is_facebook_open_to_work_row
 from src.result_quality import is_quality_search_row
 from src.role_pattern_builder import build_role_pattern
-from src.search_clients import search_bing_serpapi, search_brave, search_serpapi, search_serper
-from src.search_normalizer import normalize_bing_serpapi_items, normalize_brave_items, normalize_serpapi_items, normalize_serper_items
+from src.search_clients import search_bing_serpapi, search_brave, search_serpapi, search_serper, search_you
+from src.search_normalizer import normalize_bing_serpapi_items, normalize_brave_items, normalize_serpapi_items, normalize_serper_items, normalize_you_items
 from src.search_orchestrator import parse_provider_list, run_search as run_search_pipeline
 from src.search_strategy import compact_search_input, is_query_within_limit
 from src.text_utils import clean_text
@@ -29,6 +29,13 @@ SITE_FILTERS = {
 }
 
 
+def read_int_env(name, default):
+    try:
+        return int(os.getenv(name, str(default)).strip() or default)
+    except ValueError:
+        return default
+
+
 def load_config():
     load_dotenv()
     provider = os.getenv("SEARCH_PROVIDER", "serpapi").strip().lower()
@@ -42,6 +49,10 @@ def load_config():
         "brave_api_key": os.getenv("BRAVE_SEARCH_API_KEY", "").strip(),
         "serper_api_key": os.getenv("SERPER_API_KEY", "").strip(),
         "tavily_api_key": os.getenv("TAVILY_API_KEY", "").strip(),
+        "you_api_key": os.getenv("YOU_API_KEY", "").strip(),
+        "location_verification_limit": read_int_env("LOCATION_VERIFICATION_LIMIT", 20),
+        "location_verification_providers": parse_provider_list(os.getenv("LOCATION_VERIFICATION_PROVIDERS", "serper,serpapi")),
+        "location_verification_target_providers": parse_provider_list(os.getenv("LOCATION_VERIFICATION_TARGET_PROVIDERS", "you")),
     }
 
 
@@ -357,10 +368,12 @@ def run_search(search_input, progress_callback=None, config=None):
         normalize_bing_serpapi_items=normalize_bing_serpapi_items,
         normalize_brave_items=normalize_brave_items,
         normalize_serper_items=normalize_serper_items,
+        normalize_you_items=normalize_you_items,
         search_serpapi=search_serpapi,
         search_bing_serpapi=search_bing_serpapi,
         search_brave=search_brave,
         search_serper=search_serper,
+        search_you=search_you,
         row_filter=lambda row: is_facebook_open_to_work_row(row) and is_quality_search_row(row),
         progress_callback=progress_callback,
     )

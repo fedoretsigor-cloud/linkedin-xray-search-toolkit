@@ -145,6 +145,11 @@ Decision:
 - This applies to every country/city, not only Ukraine or France.
 - When `remote` is paired with a concrete country/city, strict matching ignores `remote` and requires only concrete location evidence.
 - When building the outgoing search query, `Remote + Country/City` is reduced to the concrete country/city.
+- Country-only searches now have a local LinkedIn country-subdomain proof path.
+- Example: for `Poland`, `pl.linkedin.com/in/...` can count as country evidence.
+- Example: for `Ukraine`, `ua.linkedin.com/in/...` can count as country evidence.
+- This rule is intentionally not used for city-level searches such as `Krakow, Poland`, `Kyiv, Ukraine`, or `Houston, United States`; city searches still require city evidence in indexed profile/header/snippet text.
+- The country proof is local and does not spend provider credits.
 
 ### Q7. Are Role and Role Variants all used in search?
 
@@ -247,22 +252,29 @@ Decision:
 - Do not restore generic boosters like `profile`, `resume`, `cv`, `frontend`, or `candidate`.
 - Increase recall through more meaningful role-family query groups.
 - If the first wave still returns too few unique candidates, future waves should use different search angles, not the same queries again.
+- Use provider API pagination for deep search instead of browser-based Google UI pagination.
+- Keep noisy or unproven providers out of the main Search Depth UI until they prove unique lift in benchmarks.
 
 Implementation note:
 
 - Added semantic family query expansion for large result limits.
 - For Java Backend at 200 candidates, the system now builds up to 12 planned searches instead of 3 focused searches or 30 noisy booster searches.
-- The expected raw capacity is about `12 * 20 = 240` provider results before dedupe and strict location filtering.
+- Max depth now uses the focused provider set: Tavily, Bing / SerpApi, Google / SerpApi, and Google / Serper.
+- Max depth now paginates up to 10 pages for paginated providers.
+- With 12 base queries, current Max can plan up to `12 * (1 Tavily wave + 10 Bing pages + 10 Google / SerpApi pages + 10 Google / Serper pages) = 372` provider calls.
+- The system stops early when the requested candidate limit is reached, so actual executed calls can be lower than planned.
+- In the latest 200-candidate Poland Java Backend run, the planner scheduled 372 calls but stopped after 123 executed calls because the final 200-candidate cap was reached.
+- That run's final deduped provider contribution was: Bing / SerpApi 85, Google / SerpApi 55, Tavily 38, Google / Serper 22.
+- Before final dedupe/cap, Google / Serper had the largest accepted-row pool in that run, so no current Max provider should be removed yet.
+- Provider diagnostics are stored in run JSON for analysis, but the noisy diagnostics cards are hidden from the main UI.
 - The next search-engine improvement should be adaptive waves: wave 1 focused groups, wave 2 alternate role/skill groups, wave 3 broader discovery groups if still below target.
 
 Next provider evaluation shortlist:
 
-1. DataForSEO
-2. SearchAPI.io
-3. Brave
-4. You.com Search API
-5. Exa
-6. Valyu
+1. SearchAPI.io
+2. Brave
+3. You.com Search API
+4. Exa
 
 Evaluation criteria:
 

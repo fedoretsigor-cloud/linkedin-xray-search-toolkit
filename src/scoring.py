@@ -105,12 +105,11 @@ def score_candidate(candidate, search):
         if location_match.get("matched"):
             score += 14
             matched_terms = ", ".join(location_match.get("matched_terms") or [location or target_location])
-            reasons.append(f"Indexed text matches strict location: {matched_terms}")
+            reasons.append(f"Current profile location matches strict target: {matched_terms}")
         elif _contains_phrase(description_lower, target_location):
-            score += 14
-            reasons.append(f"Description mentions target location: {target_location}")
+            risks.append(f"Description mentions target location, but current profile location is not confirmed: {target_location}")
         else:
-            risks.append("Target location is not clearly visible in indexed profile text")
+            risks.append("Current profile location is not confirmed for the target location")
 
     context_hits = [marker for marker in PROFILE_CONTEXT_MARKERS if marker in description_lower]
     if len(description) >= 80:

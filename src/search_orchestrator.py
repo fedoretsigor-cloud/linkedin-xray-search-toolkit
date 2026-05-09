@@ -1,11 +1,14 @@
 import re
 import time
+from urllib.parse import urlparse
 
 import requests
 
+from src.country_codes import country_metadata_from_target_locations
 from src.dedupe import dedupe_rows
 from src.devpost_normalizer import normalize_devpost_rows
 from src.location_policy import annotate_location_match, row_matches_strict_locations
+from src.text_utils import clean_text
 from src.tavily_client import search_tavily
 from src.tavily_normalizer import normalize_tavily_items
 from src.tavily_query_builder import build_tavily_query_variants
@@ -13,19 +16,20 @@ from src.search_strategy import summarize_search_strategy
 
 
 HYBRID_DEFAULT_PROVIDERS = ["tavily", "bing_serpapi"]
-SUPPORTED_PROVIDERS = {"serpapi", "bing_serpapi", "brave", "tavily", "serper"}
+SUPPORTED_PROVIDERS = {"serpapi", "bing_serpapi", "brave", "tavily", "serper", "you"}
 PAGINATED_PROVIDERS = {"serpapi", "bing_serpapi", "serper"}
 SEARCH_DEPTH_PAGE_CAPS = {
     "standard": 1,
     "medium": 2,
     "extended": 3,
-    "max": 5,
+    "max": 10,
 }
 SEARCH_DEPTH_LABELS = {
     "standard": "Standard",
     "medium": "Medium",
     "extended": "Extended",
     "max": "Max",
+    "you": "You.com Lab",
 }
 CREDIT_ERROR_MARKERS = (
     "credit",
@@ -230,6 +234,267 @@ def attach_query_context(rows, query_info):
     return rows
 
 
+def linkedin_profile_key(url):
+    parsed = urlparse(url or "")
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if len(parts) < 2 or parts[0].lower() != "in":
+        return ""
+    return parts[1].lower().strip()
+
+
+def build_location_verification_query(row, target_locations):
+    target_location = clean_text((target_locations or [""])[0])
+    if not target_location:
+        return ""
+
+    profile_slug = linkedin_profile_key(row.get("profile_url", ""))
+    profile_name = clean_text(row.get("profile_name", ""))
+    profile_anchor = profile_slug or profile_name
+    if not profile_anchor:
+        return ""
+    return f'site:linkedin.com/in/ "{profile_anchor}" "{target_location}"'
+
+
+def build_diagnostics(verification_limit):
+    return {
+        "raw_rows": 0,
+        "quality_rows": 0,
+        "accepted_rows": 0,
+        "strict_location_rejected": 0,
+        "missing_current_location": 0,
+        "conflicting_current_location": 0,
+        "free_text_location_only": 0,
+        "confirmed_location": 0,
+        "verification_attempted": 0,
+        "verification_confirmed": 0,
+        "verification_limit": verification_limit,
+        "by_provider": {},
+    }
+
+
+def provider_diagnostics(diagnostics, provider):
+    providers = diagnostics.setdefault("by_provider", {})
+    if provider not in providers:
+        providers[provider] = {
+            "raw_rows": 0,
+            "quality_rows": 0,
+            "accepted_rows": 0,
+            "strict_location_rejected": 0,
+            "missing_current_location": 0,
+            "conflicting_current_location": 0,
+            "free_text_location_only": 0,
+            "confirmed_location": 0,
+            "verification_attempted": 0,
+            "verification_confirmed": 0,
+        }
+    return providers[provider]
+
+
+def add_diagnostic(diagnostics, provider, key, count=1):
+    diagnostics[key] = diagnostics.get(key, 0) + count
+    provider_stats = provider_diagnostics(diagnostics, provider)
+    provider_stats[key] = provider_stats.get(key, 0) + count
+
+
+def add_location_rejection_diagnostics(diagnostics, provider, row):
+    add_diagnostic(diagnostics, provider, "strict_location_rejected")
+    match = row.get("location_match") or {}
+    if match.get("current_location_missing"):
+        add_diagnostic(diagnostics, provider, "missing_current_location")
+    if match.get("current_location_conflict"):
+        add_diagnostic(diagnostics, provider, "conflicting_current_location")
+    if match.get("free_text_location_only"):
+        add_diagnostic(diagnostics, provider, "free_text_location_only")
+
+
+def verification_candidates(rows, target_locations, verification_state):
+    if not target_locations:
+        return []
+    candidates = []
+    for row in rows:
+        if row_matches_strict_locations(row, target_locations):
+            continue
+        match = row.get("location_match") or {}
+        should_verify = (
+            match.get("current_location_missing")
+            or match.get("current_location_conflict")
+            or match.get("free_text_location_only")
+        )
+        if not should_verify:
+            continue
+        key = linkedin_profile_key(row.get("profile_url", "")) or clean_text(row.get("profile_name", "")).lower()
+        if not key or key in verification_state["attempted_keys"]:
+            continue
+        candidates.append((key, row))
+    return candidates
+
+
+def resolve_location_verification_providers(config):
+    providers = parse_provider_list(config.get("location_verification_providers"))
+    return providers or ["serper", "serpapi"]
+
+
+def resolve_location_verification_target_providers(config):
+    providers = parse_provider_list(config.get("location_verification_target_providers"))
+    return set(providers or ["you"])
+
+
+def verification_provider_is_configured(provider, config):
+    if provider == "serper":
+        return bool(config.get("serper_api_key"))
+    if provider in {"serpapi", "bing_serpapi"}:
+        return bool(config.get("serpapi_api_key"))
+    if provider == "brave":
+        return bool(config.get("brave_api_key"))
+    if provider == "you":
+        return bool(config.get("you_api_key"))
+    if provider == "tavily":
+        return bool(config.get("tavily_api_key"))
+    return False
+
+
+def apply_verified_location(row, verification_rows, target_locations, verification_query, verification_provider, location_metadata=None):
+    expected_key = linkedin_profile_key(row.get("profile_url", ""))
+    for verification_row in verification_rows:
+        if expected_key and linkedin_profile_key(verification_row.get("profile_url", "")) != expected_key:
+            continue
+        verification_row = annotate_location_match(verification_row, target_locations, location_metadata)
+        if not row_matches_strict_locations(verification_row, target_locations):
+            continue
+        row["location"] = verification_row.get("location", "") or row.get("location", "")
+        row["location_match"] = dict(verification_row.get("location_match", {}))
+        row["location_match"]["verified_by_provider"] = verification_provider
+        row["location_match"]["verified_by_query"] = verification_query
+        row["location_verification_query"] = verification_query
+        row["location_verification_description"] = verification_row.get("short_description", "")
+        return True
+    return False
+
+
+def search_location_verification_provider(
+    provider,
+    *,
+    query,
+    config,
+    per_request_limit,
+    normalize_serpapi_items,
+    normalize_bing_serpapi_items,
+    normalize_brave_items,
+    normalize_serper_items,
+    normalize_you_items,
+    search_serpapi,
+    search_bing_serpapi,
+    search_brave,
+    search_serper,
+    search_you,
+):
+    limit = min(per_request_limit, 5)
+    if provider == "serper":
+        payload = search_serper(config["serper_api_key"], query, limit)
+        return normalize_serper_items(query, payload)
+    if provider == "serpapi":
+        payload = search_serpapi(config["serpapi_api_key"], query, limit)
+        return normalize_serpapi_items(query, payload)
+    if provider == "bing_serpapi":
+        payload = search_bing_serpapi(config["serpapi_api_key"], query, limit)
+        return normalize_bing_serpapi_items(query, payload)
+    if provider == "brave":
+        payload = search_brave(config["brave_api_key"], query, limit)
+        return normalize_brave_items(query, payload)
+    if provider == "you":
+        payload = search_you(config["you_api_key"], query, limit)
+        return normalize_you_items(query, payload)
+    raise RuntimeError(f"Unsupported location verification provider: {provider}")
+
+
+def verify_candidate_locations(
+    rows,
+    *,
+    target_locations,
+    query_info,
+    config,
+    per_request_limit,
+    location_metadata,
+    normalize_serpapi_items,
+    normalize_bing_serpapi_items,
+    normalize_brave_items,
+    normalize_serper_items,
+    normalize_you_items,
+    search_serpapi,
+    search_bing_serpapi,
+    search_brave,
+    search_serper,
+    search_you,
+    executed_queries,
+    provider_errors,
+    diagnostics,
+    verification_state,
+):
+    if not target_locations or not rows:
+        return rows
+    if verification_state["attempts"] >= verification_state["limit"]:
+        return rows
+
+    for key, row in verification_candidates(rows, target_locations, verification_state):
+        if verification_state["attempts"] >= verification_state["limit"]:
+            break
+        verification_query = build_location_verification_query(row, target_locations)
+        if not verification_query:
+            verification_state["attempted_keys"].add(key)
+            continue
+
+        verification_state["attempted_keys"].add(key)
+        for verification_provider in verification_state["providers"]:
+            if verification_state["attempts"] >= verification_state["limit"]:
+                break
+            if not verification_provider_is_configured(verification_provider, config):
+                continue
+
+            verification_state["attempts"] += 1
+            add_diagnostic(diagnostics, verification_provider, "verification_attempted")
+            verification_query_info = dict(query_info)
+            verification_query_info["provider"] = verification_provider
+            verification_query_info["query"] = verification_query
+            verification_query_info["query_type"] = "location_verification"
+            verification_query_info["verification_for"] = row.get("profile_url", "")
+            verification_query_info["page"] = 1
+            verification_query_info["page_size"] = min(per_request_limit, 5)
+            executed_queries.append(verification_query_info)
+
+            try:
+                verification_rows = search_location_verification_provider(
+                    verification_provider,
+                    query=verification_query,
+                    config=config,
+                    per_request_limit=per_request_limit,
+                    normalize_serpapi_items=normalize_serpapi_items,
+                    normalize_bing_serpapi_items=normalize_bing_serpapi_items,
+                    normalize_brave_items=normalize_brave_items,
+                    normalize_serper_items=normalize_serper_items,
+                    normalize_you_items=normalize_you_items,
+                    search_serpapi=search_serpapi,
+                    search_bing_serpapi=search_bing_serpapi,
+                    search_brave=search_brave,
+                    search_serper=search_serper,
+                    search_you=search_you,
+                )
+            except (RuntimeError, requests.RequestException) as exc:
+                error = describe_provider_error(verification_provider, exc)
+                if error not in provider_errors:
+                    provider_errors.append(error)
+                continue
+
+            verification_rows = attach_query_context(verification_rows, verification_query_info)
+            for verification_row in verification_rows:
+                verification_row["search_provider"] = verification_provider
+
+            if apply_verified_location(row, verification_rows, target_locations, verification_query, verification_provider, location_metadata):
+                verification_state["confirmed"] += 1
+                add_diagnostic(diagnostics, verification_provider, "verification_confirmed")
+                break
+    return rows
+
+
 def run_search(
     search_input,
     *,
@@ -239,10 +504,12 @@ def run_search(
     normalize_bing_serpapi_items,
     normalize_brave_items,
     normalize_serper_items,
+    normalize_you_items,
     search_serpapi,
     search_bing_serpapi,
     search_brave,
     search_serper,
+    search_you,
     row_filter,
     progress_callback=None,
 ):
@@ -274,6 +541,17 @@ def run_search(
     target_locations = search_input.get("display_locations") or search_input.get("locations", [])
     provider_errors = []
     failed_providers = set()
+    verification_limit = max(int(config.get("location_verification_limit", 20) or 0), 0)
+    diagnostics = build_diagnostics(verification_limit)
+    location_metadata = country_metadata_from_target_locations(target_locations)
+    verification_state = {
+        "attempts": 0,
+        "confirmed": 0,
+        "limit": verification_limit,
+        "attempted_keys": set(),
+        "providers": resolve_location_verification_providers(config),
+        "target_providers": resolve_location_verification_target_providers(config),
+    }
 
     for index, query_info in enumerate(query_plan, start=1):
         if len(dedupe_rows(all_rows)) >= requested_count:
@@ -307,6 +585,11 @@ def run_search(
                     raise RuntimeError("Missing SERPER_API_KEY in .env")
                 payload = search_serper(config["serper_api_key"], query, per_request_limit, page=query_info.get("serper_page"))
                 rows = normalize_serper_items(query, payload)
+            elif provider == "you":
+                if not config["you_api_key"]:
+                    raise RuntimeError("Missing YOU_API_KEY in .env")
+                payload = search_you(config["you_api_key"], query, per_request_limit)
+                rows = normalize_you_items(query, payload)
             else:
                 payload = search_tavily(config["tavily_api_key"], query, per_request_limit)
                 rows = normalize_tavily_items(query, payload)
@@ -325,10 +608,43 @@ def run_search(
             row["search_provider"] = provider
         rows = attach_query_context(rows, query_info)
         rows = normalize_devpost_rows(rows)
-        rows = [annotate_location_match(row, target_locations) for row in rows]
+        rows = [annotate_location_match(row, target_locations, location_metadata) for row in rows]
+        add_diagnostic(diagnostics, provider, "raw_rows", len(rows))
+        quality_rows = [row for row in rows if row_filter(row)]
+        add_diagnostic(diagnostics, provider, "quality_rows", len(quality_rows))
+        if provider in verification_state["target_providers"] and location_policy == "strict" and verification_limit:
+            quality_rows = verify_candidate_locations(
+                quality_rows,
+                target_locations=target_locations,
+                query_info=query_info,
+                config=config,
+                per_request_limit=per_request_limit,
+                location_metadata=location_metadata,
+                normalize_serpapi_items=normalize_serpapi_items,
+                normalize_bing_serpapi_items=normalize_bing_serpapi_items,
+                normalize_brave_items=normalize_brave_items,
+                normalize_serper_items=normalize_serper_items,
+                normalize_you_items=normalize_you_items,
+                search_serpapi=search_serpapi,
+                search_bing_serpapi=search_bing_serpapi,
+                search_brave=search_brave,
+                search_serper=search_serper,
+                search_you=search_you,
+                executed_queries=executed_queries,
+                provider_errors=provider_errors,
+                diagnostics=diagnostics,
+                verification_state=verification_state,
+            )
+        for row in quality_rows:
+            if row_matches_strict_locations(row, target_locations):
+                if target_locations:
+                    add_diagnostic(diagnostics, provider, "confirmed_location")
+            elif location_policy == "strict":
+                add_location_rejection_diagnostics(diagnostics, provider, row)
         if location_policy == "strict":
-            rows = [row for row in rows if row_matches_strict_locations(row, target_locations)]
-        all_rows.extend([row for row in rows if row_filter(row)])
+            quality_rows = [row for row in quality_rows if row_matches_strict_locations(row, target_locations)]
+        add_diagnostic(diagnostics, provider, "accepted_rows", len(quality_rows))
+        all_rows.extend(quality_rows)
 
     rows = dedupe_rows(all_rows)[:requested_count]
     search_strategy = summarize_search_strategy(search_input, executed_queries)
@@ -340,6 +656,15 @@ def run_search(
     search_strategy["planned_query_count"] = len(query_plan)
     search_strategy["executed_query_count"] = len(executed_queries)
     search_strategy["provider_errors"] = provider_errors
+    search_strategy["country_location"] = location_metadata or {}
+    search_strategy["location_verification_providers"] = verification_state["providers"]
+    search_strategy["location_verification_target_providers"] = sorted(verification_state["target_providers"])
+    diagnostics["final_candidates"] = len(rows)
+    diagnostics["location_verification_providers"] = verification_state["providers"]
+    diagnostics["location_verification_target_providers"] = sorted(verification_state["target_providers"])
+    diagnostics["verification_attempted"] = verification_state["attempts"]
+    diagnostics["verification_confirmed"] = verification_state["confirmed"]
+    search_strategy["result_diagnostics"] = diagnostics
     return {
         "provider": "hybrid" if len(providers) > 1 else providers[0],
         "providers": providers,

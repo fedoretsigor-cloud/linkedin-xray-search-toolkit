@@ -33,7 +33,7 @@ const SEARCH_DEPTHS = {
   max: {
     label: "Max",
     providers: ["tavily", "bing_serpapi", "serpapi", "serper"],
-    pageCap: 5,
+    pageCap: 10,
   },
 };
 const PAGINATED_SEARCH_PROVIDERS = new Set(["bing_serpapi", "serpapi", "serper"]);
@@ -692,6 +692,7 @@ function paintProgress(percent, title, copy) {
   const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
   ui.card.classList.remove("hidden");
   ui.providerAlerts?.classList.add("hidden");
+  document.getElementById("search-diagnostics")?.classList.add("hidden");
   ui.empty.classList.add("hidden");
   ui.table.classList.add("hidden");
   ui.meta.textContent = "Search in progress...";
@@ -748,6 +749,13 @@ function renderProviderAlerts(errors) {
       </div>
     `;
   }).join("");
+}
+
+function renderSearchDiagnostics() {
+  const container = document.getElementById("search-diagnostics");
+  if (!container) return;
+  container.innerHTML = "";
+  container.classList.add("hidden");
 }
 
 function startSearchProgress(data) {
@@ -1837,6 +1845,7 @@ function renderResults(run) {
   const warningCopy = providerErrors.length ? ` - ${providerErrors.length} provider warning${providerErrors.length === 1 ? "" : "s"}` : "";
   meta.textContent = `${run.candidates.length} candidates - ${run.queries_count} queries - ${run.duration_seconds}s${locationPolicy}${providerCopy}${warningCopy}${projectCopy}`;
   renderProviderAlerts(providerErrors);
+  renderSearchDiagnostics(run.search_strategy);
 
   const empty = document.getElementById("results-state");
   const wrapper = document.getElementById("results-table-wrapper");

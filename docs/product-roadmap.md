@@ -156,6 +156,7 @@ Current implementation:
 - City/country inputs now search the primary city token, for example `Houston, United States` -> `"houston"`, while strict location validation still uses the full displayed location.
 - Search Strategy Preview now includes search depth, provider list, base query count, provider-pass count, and sample provider queries.
 - Search Depth UI added: Standard, Medium, Extended, and Max.
+- Max search depth now uses deeper API pagination for paginated providers: up to 10 pages for Bing / SerpApi, Google / SerpApi, and Google / Serper.
 - The run stores `search_strategy`.
 - The sourcing project stores the latest `search_strategy`.
 
@@ -188,9 +189,14 @@ Current implementation:
 - Hybrid provider orchestration is now supported. A run can execute the same query set across multiple search providers and dedupe the combined results.
 - Supported provider plumbing now includes Tavily, Bing via SerpApi, Google via SerpApi, Google via Serper, and Brave Search API.
 - Search depth controls provider selection: Standard = Tavily; Medium = Tavily + Bing / SerpApi; Extended = Tavily + Bing / SerpApi + Google / SerpApi; Max = Tavily + Bing / SerpApi + Google / SerpApi + Google / Serper.
+- Max intentionally keeps the user-facing provider set focused on Tavily, Bing / SerpApi, Google / SerpApi, and Google / Serper. Experimental or noisy providers are kept out of the main UI until they prove useful in benchmarks.
+- Deep-result pagination is implemented through provider APIs, not browser automation. For 200-candidate Max searches, the planner can schedule up to 10 pages for each paginated provider.
 - Provider failures inside a multi-provider run are captured as provider warnings instead of failing the whole search when another provider can still return results.
 - Candidate records now retain the search provider that found them, so the UI can show where a profile came from.
-- `.env.example` documents `SERPAPI_API_KEY`, `BRAVE_SEARCH_API_KEY`, `SERPER_API_KEY`, `TAVILY_API_KEY`, and OpenAI settings.
+- `.env.example` documents `SERPAPI_API_KEY`, `BRAVE_SEARCH_API_KEY`, `SERPER_API_KEY`, `TAVILY_API_KEY`, `YOU_API_KEY`, location verification settings, and OpenAI settings.
+- Provider diagnostics are stored in `search_strategy.result_diagnostics` for analysis, including raw rows, quality rows, accepted rows, strict-location rejects, verification attempts, and provider breakdowns.
+- Detailed diagnostics are hidden from the main results UI by default so the recruiter sees a cleaner candidate table, while the run JSON remains auditable.
+- Search runs store the actual executed provider queries, including page/start/first offsets, so we can audit what was sent after early stopping.
 - Hybrid role presets and editable role variants are implemented.
 - Query expansion now prefers meaningful family-specific search angles over repeated identical queries or noisy generic boosters.
 - Devpost-specific normalization now avoids treating project titles as candidate names.
@@ -206,6 +212,7 @@ Remaining work:
 - Improve source-specific search behavior per source.
 - Validate Brave Search API once account/card access is resolved and `BRAVE_SEARCH_API_KEY` is available.
 - Benchmark provider quality across Standard, Medium, Extended, and Max search depths.
+- Add a compact internal/export view for provider contribution reporting instead of showing raw diagnostics in the main candidate results screen.
 - Add a Projects UI so users can browse projects directly, not only search history.
 - Decide whether Render production should use persistent disk/database instead of local JSON for long-term storage.
 
@@ -501,11 +508,15 @@ Recommended next build order:
 12. In progress: Add PDF/DOCX resume upload and resume analysis.
 13. Done first slice: Improve search engine recall for large result limits using semantic family query groups.
 14. Done first slice: Add hybrid provider search with depth controls for Tavily, Bing / SerpApi, Google / SerpApi, and Serper.
-15. Next: Add provider contribution reporting for raw, filtered, deduped, and unique-lift counts.
-16. Next: Add adaptive second/third search waves when a 100/200-candidate search returns too few unique results.
-17. Later: Add decision memory across profile and resume review.
-18. Later: Add conversational sourcing copilot on top of stable workflow actions.
-19. Backlog: Add candidate communication tracking after the core review workflow is stable.
+15. Done first slice: Add provider error handling so missing credits, auth failures, and rate limits surface as provider warnings without killing multi-provider runs.
+16. Done first slice: Add strict country-level LinkedIn subdomain proof for country searches, while keeping city searches strict on city evidence.
+17. Done first slice: Increase Max depth API pagination to 10 pages for paginated providers.
+18. Done first slice: Store provider diagnostics and executed-query audit trails while hiding the noisy diagnostics block from the main UI.
+19. Next: Add provider contribution reporting for raw, filtered, deduped, and unique-lift counts in an internal/reporting view.
+20. Next: Add adaptive second/third search waves when a 100/200-candidate search returns too few unique results.
+21. Later: Add decision memory across profile and resume review.
+22. Later: Add conversational sourcing copilot on top of stable workflow actions.
+23. Backlog: Add candidate communication tracking after the core review workflow is stable.
 
 ## Current Decision
 
@@ -571,15 +582,23 @@ Completed:
 - Google / Serper was added as a prepared fourth provider with `SERPER_API_KEY` configuration.
 - Brave Search API remains wired in code and ready for `BRAVE_SEARCH_API_KEY` once account access is resolved.
 - Search Depth UI added with Standard, Medium, Extended, and Max provider presets.
+- Max search depth now paginates up to 10 API pages for Bing / SerpApi, Google / SerpApi, and Google / Serper.
+- Max provider set is currently focused on Tavily, Bing / SerpApi, Google / SerpApi, and Google / Serper.
+- Experimental provider options that did not yet prove useful are hidden from the main Search Depth UI.
 - Search Strategy Preview now shows provider list, base query count, provider-pass count, and provider-tagged sample queries.
 - Candidate detail UI now shows which search provider found the candidate.
 - Multi-provider search now records provider warnings without failing the whole run when other providers succeed.
+- Provider warning classification now distinguishes credits/quota, rate limit, auth/access, missing configuration, and generic API errors.
+- Strict location filtering now treats query text alone as insufficient evidence.
+- Country-only searches can use LinkedIn country subdomains as local proof, for example `pl.linkedin.com` for Poland, while city searches still require city evidence from indexed profile/header/snippet text.
+- Provider diagnostics are stored in run JSON but hidden from the main UI.
+- Executed-query audit files can be generated from saved runs to inspect the exact provider queries and pagination offsets that were sent.
 - Server log files are ignored by Git.
 
 In progress:
 
 - Owner-led search-engine review, including Serper validation and Brave Search billing/access.
-- Next provider evaluation shortlist: DataForSEO, SearchAPI.io, Brave, You.com Search API, Exa, and Valyu.
+- Next provider evaluation shortlist: SearchAPI.io, Brave, You.com Search API, and Exa.
 - Strict location filtering and UX validation on real Houston searches.
 - Provider-quality benchmarking across Standard, Medium, Extended, and Max search depths.
 - High-recall search planning for 100/200-candidate runs, including adaptive second/third waves.
@@ -588,5 +607,6 @@ In progress:
 
 Next recommended product step:
 
-- Run side-by-side benchmarks for Standard, Medium, Extended, and Max on the same requirement. Add provider contribution reporting before designing adaptive second/third search waves for cases where dedupe and strict location filtering still return too few candidates.
+- Run side-by-side benchmarks for Standard, Medium, Extended, and Max on the same requirement. Use saved diagnostics and executed-query audits to compare actual provider contribution, not just planned query counts.
+- Add a compact provider contribution report that shows raw rows, accepted rows, final deduped candidates, and unique lift per provider without showing noisy diagnostics in the main recruiter UI.
 - Test the next provider shortlist with the same X-Ray query set and compare raw LinkedIn URLs, strict-location survivors, deduped candidates, cost, and pagination behavior.
