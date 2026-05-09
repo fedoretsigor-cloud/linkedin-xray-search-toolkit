@@ -18,20 +18,25 @@ const SEARCH_DEPTHS = {
   standard: {
     label: "Standard",
     providers: ["tavily"],
+    pageCap: 1,
   },
   medium: {
     label: "Medium",
     providers: ["tavily", "bing_serpapi"],
+    pageCap: 2,
   },
   extended: {
     label: "Extended",
     providers: ["tavily", "bing_serpapi", "serpapi"],
+    pageCap: 3,
   },
   max: {
     label: "Max",
     providers: ["tavily", "bing_serpapi", "serpapi", "serper"],
+    pageCap: 5,
   },
 };
+const PAGINATED_SEARCH_PROVIDERS = new Set(["bing_serpapi", "serpapi", "serper"]);
 const SEARCH_INTENT_TERMS = [
   ["robot framework", "Robot Framework", "language"],
   ["python", "Python", "language"],
@@ -354,6 +359,17 @@ function formatProviderLabel(value) {
   return labels[key] || formatTitleCaseValue(key.replaceAll("_", " "));
 }
 
+function formatProviderErrorKind(kind) {
+  const labels = {
+    credits: "Credits / quota issue",
+    rate_limit: "Rate limit",
+    auth: "API key / access issue",
+    configuration: "Missing configuration",
+    api_error: "Provider API error",
+  };
+  return labels[kind] || "Provider warning";
+}
+
 function getSearchDepthConfig(value) {
   return SEARCH_DEPTHS[value] || SEARCH_DEPTHS.extended;
 }
@@ -361,6 +377,14 @@ function getSearchDepthConfig(value) {
 function getSelectedSearchDepth(form = document.getElementById("search-form")) {
   const value = form?.search_depth?.value || document.querySelector('input[name="search_depth"]:checked')?.value;
   return getSearchDepthConfig(value);
+}
+
+function getProviderPageCap(provider, searchDepth) {
+  return PAGINATED_SEARCH_PROVIDERS.has(provider) ? searchDepth.pageCap : 1;
+}
+
+function countProviderPasses(providers, searchDepth) {
+  return providers.reduce((total, provider) => total + getProviderPageCap(provider, searchDepth), 0);
 }
 
 function escapeHtml(value) {
@@ -655,6 +679,7 @@ function getProgressElements() {
     percent: document.getElementById("search-progress-percent"),
     bar: document.getElementById("search-progress-bar"),
     steps: Array.from(document.querySelectorAll(".progress-step")),
+    providerAlerts: document.getElementById("provider-alerts"),
     empty: document.getElementById("results-state"),
     table: document.getElementById("results-table-wrapper"),
     meta: document.getElementById("results-meta"),
@@ -666,6 +691,7 @@ function paintProgress(percent, title, copy) {
   if (!ui.card) return;
   const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
   ui.card.classList.remove("hidden");
+  ui.providerAlerts?.classList.add("hidden");
   ui.empty.classList.add("hidden");
   ui.table.classList.add("hidden");
   ui.meta.textContent = "Search in progress...";
@@ -693,6 +719,35 @@ function hideProgressCard() {
   if (ui.steps[0]) {
     ui.steps[0].classList.add("is-active");
   }
+}
+
+function renderProviderAlerts(errors) {
+  const container = document.getElementById("provider-alerts");
+  if (!container) return;
+  const providerErrors = Array.isArray(errors) ? errors : [];
+  if (!providerErrors.length) {
+    container.innerHTML = "";
+    container.classList.add("hidden");
+    return;
+  }
+
+  container.classList.remove("hidden");
+  container.innerHTML = providerErrors.map((error) => {
+    const kind = error.kind || "api_error";
+    const status = error.status_code ? `HTTP ${error.status_code}` : "";
+    const detail = error.message ? `<span class="provider-alert-detail">${escapeHtml(error.message)}</span>` : "";
+    const userMessage = error.user_message || "This provider failed, but search continued with the remaining providers.";
+    return `
+      <div class="provider-alert-card is-${escapeHtml(kind)}">
+        <div>
+          <strong>${escapeHtml(formatProviderLabel(error.provider))}</strong>
+          <span>${escapeHtml(formatProviderErrorKind(kind))}${status ? ` · ${escapeHtml(status)}` : ""}</span>
+        </div>
+        <p>${escapeHtml(userMessage)}</p>
+        ${detail}
+      </div>
+    `;
+  }).join("");
 }
 
 function startSearchProgress(data) {
@@ -1415,7 +1470,8 @@ function buildStrategyPreviewFromForm() {
   const baseQueryCount = isGroupedAnchorStrategy
     ? buildGroupedAnchorQueryCount(rolePattern, locations, sources)
     : Math.max(expandedSkillGroups.length, 1) * Math.max(locations.length, 1) * Math.max(sources.length, 1);
-  const queryCount = baseQueryCount * searchDepth.providers.length;
+  const providerPasses = countProviderPasses(searchDepth.providers, searchDepth);
+  const queryCount = baseQueryCount * providerPasses;
   let sampleQueries = [];
   const titlePattern = rolePattern.titlePattern;
 
@@ -1453,6 +1509,7 @@ function buildStrategyPreviewFromForm() {
     search_depth: searchDepthKey,
     search_depth_label: searchDepth.label,
     providers: searchDepth.providers,
+    provider_passes: providerPasses,
     base_query_count: baseQueryCount,
     query_count: queryCount,
     location_policy: "strict",
@@ -1513,7 +1570,7 @@ function renderSearchStrategyPreview() {
       <summary>Search depth</summary>
       <ul>
         <li>${escapeHtml(strategy.search_depth_label || "Extended")}: ${escapeHtml((strategy.providers || []).map(formatProviderLabel).join(" + ") || "No provider selected.")}</li>
-        <li>Base queries: ${escapeHtml(strategy.base_query_count || strategy.query_count)}; provider passes: ${escapeHtml(strategy.query_count)}.</li>
+        <li>Base queries: ${escapeHtml(strategy.base_query_count || strategy.query_count)}; provider/page passes: ${escapeHtml(strategy.provider_passes || strategy.query_count)}; planned calls: ${escapeHtml(strategy.query_count)}.</li>
       </ul>
     </details>
     <details class="brief-details">
@@ -1779,6 +1836,7 @@ function renderResults(run) {
   const providerErrors = Array.isArray(run.provider_errors) ? run.provider_errors : [];
   const warningCopy = providerErrors.length ? ` - ${providerErrors.length} provider warning${providerErrors.length === 1 ? "" : "s"}` : "";
   meta.textContent = `${run.candidates.length} candidates - ${run.queries_count} queries - ${run.duration_seconds}s${locationPolicy}${providerCopy}${warningCopy}${projectCopy}`;
+  renderProviderAlerts(providerErrors);
 
   const empty = document.getElementById("results-state");
   const wrapper = document.getElementById("results-table-wrapper");

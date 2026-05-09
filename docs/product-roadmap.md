@@ -579,6 +579,7 @@ Completed:
 In progress:
 
 - Owner-led search-engine review, including Serper validation and Brave Search billing/access.
+- Next provider evaluation shortlist: DataForSEO, SearchAPI.io, Brave, You.com Search API, Exa, and Valyu.
 - Strict location filtering and UX validation on real Houston searches.
 - Provider-quality benchmarking across Standard, Medium, Extended, and Max search depths.
 - High-recall search planning for 100/200-candidate runs, including adaptive second/third waves.
@@ -588,3 +589,4 @@ In progress:
 Next recommended product step:
 
 - Run side-by-side benchmarks for Standard, Medium, Extended, and Max on the same requirement. Add provider contribution reporting before designing adaptive second/third search waves for cases where dedupe and strict location filtering still return too few candidates.
+- Test the next provider shortlist with the same X-Ray query set and compare raw LinkedIn URLs, strict-location survivors, deduped candidates, cost, and pagination behavior.

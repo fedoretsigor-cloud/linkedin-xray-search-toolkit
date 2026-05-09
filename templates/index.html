@@ -40,28 +40,28 @@
                       <input type="radio" name="search_depth" value="standard" form="search-form">
                       <span>
                         <strong>Standard</strong>
-                        <small>Tavily</small>
+                        <small>Tavily waves</small>
                       </span>
                     </label>
                     <label class="depth-option">
                       <input type="radio" name="search_depth" value="medium" form="search-form">
                       <span>
                         <strong>Medium</strong>
-                        <small>Tavily + Bing</small>
+                        <small>Tavily + Bing pages</small>
                       </span>
                     </label>
                     <label class="depth-option">
                       <input type="radio" name="search_depth" value="extended" form="search-form" checked>
                       <span>
                         <strong>Extended</strong>
-                        <small>Tavily + Bing + Google</small>
+                        <small>Tavily + Bing/Google pages</small>
                       </span>
                     </label>
                     <label class="depth-option">
                       <input type="radio" name="search_depth" value="max" form="search-form">
                       <span>
                         <strong>Max</strong>
-                        <small>All + Serper</small>
+                        <small>All providers + deep pages</small>
                       </span>
                     </label>
                   </div>
@@ -279,6 +279,8 @@
               <div id="search-progress-bar" class="search-progress-bar"></div>
             </div>
 </div>
+
+          <div id="provider-alerts" class="provider-alerts hidden" role="alert"></div>
 
           <div id="results-state" class="empty-state">
             Search results will appear here.

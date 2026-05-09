@@ -255,6 +255,24 @@ Implementation note:
 - The expected raw capacity is about `12 * 20 = 240` provider results before dedupe and strict location filtering.
 - The next search-engine improvement should be adaptive waves: wave 1 focused groups, wave 2 alternate role/skill groups, wave 3 broader discovery groups if still below target.
 
+Next provider evaluation shortlist:
+
+1. DataForSEO
+2. SearchAPI.io
+3. Brave
+4. You.com Search API
+5. Exa
+6. Valyu
+
+Evaluation criteria:
+
+- Raw LinkedIn profile URLs returned for the same X-Ray query set.
+- Unique candidates after dedupe.
+- Strict-location survivors.
+- Pagination or deep-results behavior.
+- Cost per useful unique candidate.
+- Whether the provider returns raw URL/title/snippet data rather than only AI-generated answers.
+
 ### Q10. Future chat-based sourcing copilot
 
 Owner expectation:

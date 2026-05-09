@@ -143,6 +143,7 @@ def build_web_search_request(payload, default_results):
         "num": requested_num,
         "provider": None,
         "providers": search["providers"],
+        "search_depth": search["search_depth"],
         "search_intent": search_intent,
         "role_pattern": role_pattern,
     }
@@ -194,6 +195,7 @@ def build_run_record(search, search_result):
         "confirmed_brief": search.get("confirmed_brief"),
         "search_strategy": search_result.get("search_strategy", {}),
         "provider_errors": search_result.get("provider_errors", []),
+        "queries": search_result["queries"],
         "queries_count": len(search_result["queries"]),
         "duration_seconds": round(search_result["duration_seconds"], 2),
         "candidates": candidates,

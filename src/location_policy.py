@@ -5,17 +5,6 @@ from src.text_utils import clean_text
 
 REMOTE_TERMS = {"remote", "remotely", "remote work", "work from home", "wfh"}
 
-LOCATION_ALIASES = {
-    "ukraine": {"ukraine", "україна", "kyiv", "kiev", "lviv", "odesa", "odessa", "kharkiv", "dnipro"},
-    "poland": {"poland", "warsaw", "krakow", "kraków", "wroclaw", "wrocław", "gdansk", "gdańsk"},
-    "united states": {"united states", "usa", "u.s.", "us", "new york", "california", "texas"},
-    "usa": {"united states", "usa", "u.s.", "us", "new york", "california", "texas"},
-    "germany": {"germany", "berlin", "munich", "münchen", "hamburg"},
-    "france": {"france", "paris", "lyon", "marseille", "toulouse", "nice"},
-    "romania": {"romania", "bucharest", "cluj"},
-    "bulgaria": {"bulgaria", "sofia"},
-}
-
 
 def normalize_locations(locations):
     normalized = []
@@ -48,20 +37,29 @@ def effective_locations(locations):
 def build_location_terms(locations):
     terms = []
     requires_remote = False
-    for location in effective_locations(locations):
-        normalized = normalize_for_match(location)
-        if not normalized:
+    for location in locations or []:
+        raw = clean_text(location)
+        if not raw:
             continue
-        if has_remote_marker(normalized):
-            # "Remote + Country/City" means the concrete location is strict and
-            # "remote" is only work format. This rule applies to every country/city.
-            remainder = strip_remote_marker(normalized)
-            if remainder:
-                add_location_aliases(terms, remainder)
-            else:
-                requires_remote = True
-            continue
-        add_location_aliases(terms, normalized)
+        concrete_parts = []
+        remote_seen = False
+        for part in [clean_text(item) for item in re.split(r"[,;/\n]+", raw) if clean_text(item)]:
+            normalized = normalize_for_match(part)
+            if has_remote_marker(normalized):
+                remote_seen = True
+                remainder = strip_remote_marker(normalized)
+                if remainder:
+                    concrete_parts.append(remainder)
+                continue
+            concrete_parts.append(part)
+
+        if concrete_parts:
+            # If the user writes "City, Country", the city is the strict
+            # constraint. If the user writes only a country, match that
+            # country literally instead of broadening to city aliases.
+            add_location_terms(terms, concrete_parts[0])
+        elif remote_seen:
+            requires_remote = True
     return {
         "terms": dedupe_values(terms),
         "requires_remote": requires_remote,
@@ -114,19 +112,38 @@ def row_location_evidence(row):
     )
 
 
+def explicit_profile_location(row):
+    location = clean_text(row.get("location", ""))
+    if normalize_for_match(location) in {"", "-", "unknown", "n/a", "none"}:
+        return ""
+    return location
+
+
 def annotate_location_match(row, target_locations):
     policy = build_location_terms(target_locations)
     evidence = row_location_evidence(row)
     evidence_normalized = normalize_for_match(evidence)
-    matched_terms = [
+    evidence_matched_terms = [
         term for term in policy["terms"] if term_matches(term, evidence_normalized)
+    ]
+    current_location = explicit_profile_location(row)
+    current_location_normalized = normalize_for_match(current_location)
+    current_location_matched_terms = [
+        term for term in policy["terms"] if term_matches(term, current_location_normalized)
     ]
     remote_matched = not policy["requires_remote"] or any(
         term_matches(term, evidence_normalized) for term in REMOTE_TERMS
     )
     has_location_constraint = bool(policy["terms"] or policy["requires_remote"])
-    matched = has_location_constraint and remote_matched and (
-        bool(matched_terms) or not policy["terms"]
+    current_location_conflict = bool(
+        current_location and policy["terms"] and not current_location_matched_terms
+    )
+    matched_terms = current_location_matched_terms if current_location else evidence_matched_terms
+    matched = (
+        has_location_constraint
+        and remote_matched
+        and not current_location_conflict
+        and (bool(matched_terms) or not policy["terms"])
     )
 
     row["target_locations"] = target_locations or []
@@ -134,6 +151,10 @@ def annotate_location_match(row, target_locations):
         "required": has_location_constraint,
         "matched": matched,
         "matched_terms": matched_terms,
+        "evidence_matched_terms": evidence_matched_terms,
+        "current_location": current_location,
+        "current_location_matched_terms": current_location_matched_terms,
+        "current_location_conflict": current_location_conflict,
         "requires_remote": policy["requires_remote"],
         "remote_matched": remote_matched,
     }
@@ -149,14 +170,10 @@ def row_matches_strict_locations(row, target_locations):
     return bool(match.get("matched"))
 
 
-def add_location_aliases(terms, value):
+def add_location_terms(terms, value):
     normalized = normalize_for_match(value)
-    if not normalized:
-        return
-    terms.append(normalized)
-    for key, aliases in LOCATION_ALIASES.items():
-        if normalized == key or normalized in aliases:
-            terms.extend(aliases)
+    if normalized:
+        terms.append(normalized)
 
 
 def term_matches(term, text):
