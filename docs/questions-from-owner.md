@@ -227,7 +227,7 @@ Implementation note:
 - Role variants are now grouped with OR after the required Role term.
 - Skills still run as compact query groups to avoid long provider queries and preserve recall.
 - Explicit `strict / balanced / broad` modes are intentionally not implemented yet.
-- Repeating the same 12 queries several times is not expected to help much because Tavily will likely return overlapping results; future high-recall search should use adaptive second/third waves with different query groups.
+- Repeating the same 12 queries several times is not expected to help much because providers will likely return overlapping results; high-recall search now uses adaptive second/third waves with different query groups.
 
 Initial direction:
 
@@ -244,14 +244,14 @@ Owner concern:
 - If the user selects 200 candidates, the system should make a serious attempt to return close to 200.
 - The owner is willing to run more provider requests if that materially improves unique candidate count.
 
-Current status: First improvement implemented; adaptive waves planned.
+Current status: First adaptive wave slice implemented; real-run tuning remains.
 
 Decision:
 
 - Do not repeat identical queries multiple times; repeated identical requests are likely to return duplicate results after dedupe.
 - Do not restore generic boosters like `profile`, `resume`, `cv`, `frontend`, or `candidate`.
 - Increase recall through more meaningful role-family query groups.
-- If the first wave still returns too few unique candidates, future waves should use different search angles, not the same queries again.
+- If the first wave still returns too few unique candidates, later waves use different search angles, not the same queries again.
 - Use provider API pagination for deep search instead of browser-based Google UI pagination.
 - Keep noisy or unproven providers out of the main Search Depth UI until they prove unique lift in benchmarks.
 
@@ -268,7 +268,13 @@ Implementation note:
 - Before final dedupe/cap, Google / Serper had the largest accepted-row pool in that run, so no current Max provider should be removed yet.
 - Provider diagnostics are stored in run JSON for analysis, but the noisy diagnostics cards are hidden from the main UI.
 - Provider Contribution Report is now visible after each search and exportable to CSV. It shows raw rows, strict-location rejects, accepted rows, final unique candidates, dedupe/cap loss, executed calls, and warnings per provider.
-- The next search-engine improvement should be adaptive waves: wave 1 focused groups, wave 2 alternate role/skill groups, wave 3 broader discovery groups if still below target.
+- Adaptive waves are now implemented for 100/200-candidate searches: wave 1 focused groups, wave 2 alternate role/skill groups, wave 3 broader discovery groups for 200-candidate searches if still below target.
+
+Planned next adaptive layer:
+
+- After Wave 1, calculate unique lift by query group and provider, not only by provider overall.
+- Use that lift to decide whether Wave 2/3 should run the preplanned next groups, skip weak groups, or replace them with alternate groups from the same semantic family.
+- Keep this as a later search-engine slice after real benchmark data, so we do not overfit the planner without evidence.
 
 Next provider evaluation shortlist:
 

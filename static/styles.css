@@ -679,6 +679,21 @@ h1, h2, h3, h4, p { margin-top: 0; }
   font-size: 12px;
   line-height: 1.45;
 }
+.provider-report-waves {
+  margin-top: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(11, 17, 32, 0.32);
+}
+.provider-report-waves summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 800;
+}
+.provider-report-waves .provider-report-table-wrap {
+  margin-top: 10px;
+}
 .provider-report-metrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));

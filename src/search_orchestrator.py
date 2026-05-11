@@ -1,5 +1,6 @@
 import re
 import time
+from math import ceil
 from urllib.parse import urlparse
 
 import requests
@@ -29,6 +30,12 @@ SEARCH_DEPTH_LABELS = {
     "medium": "Medium",
     "extended": "Extended",
     "max": "Max",
+}
+ADAPTIVE_WAVE_MIN_REQUESTED_COUNT = 100
+ADAPTIVE_WAVE_LABELS = {
+    1: "Focused groups",
+    2: "Alternate groups",
+    3: "Broad discovery",
 }
 CREDIT_ERROR_MARKERS = (
     "credit",
@@ -204,22 +211,123 @@ def add_pagination_context(query_info, provider, page_index, page_size):
     return paginated_info
 
 
-def build_query_plan(providers, base_queries, requested_count, page_size, search_input):
-    provider_queries = {}
+def adaptive_wave_count(requested_count, base_query_count):
+    if requested_count < ADAPTIVE_WAVE_MIN_REQUESTED_COUNT or base_query_count <= 1:
+        return 1
+    if requested_count >= 200 and base_query_count >= 3:
+        return 3
+    return min(2, base_query_count)
+
+
+def split_queries_into_adaptive_waves(base_queries, requested_count):
+    queries = list(base_queries or [])
+    wave_count = adaptive_wave_count(requested_count, len(queries))
+    if wave_count <= 1:
+        return [
+            {
+                "wave": 1,
+                "label": ADAPTIVE_WAVE_LABELS[1],
+                "activation": "initial",
+                "queries": queries,
+            }
+        ]
+
+    chunk_size = max(ceil(len(queries) / wave_count), 1)
+    waves = []
+    for index in range(wave_count):
+        chunk = queries[index * chunk_size : (index + 1) * chunk_size]
+        if not chunk:
+            continue
+        wave_number = index + 1
+        waves.append(
+            {
+                "wave": wave_number,
+                "label": ADAPTIVE_WAVE_LABELS.get(wave_number, f"Wave {wave_number}"),
+                "activation": "initial" if wave_number == 1 else "target_not_reached",
+                "queries": chunk,
+            }
+        )
+    return waves or [
+        {
+            "wave": 1,
+            "label": ADAPTIVE_WAVE_LABELS[1],
+            "activation": "initial",
+            "queries": queries,
+        }
+    ]
+
+
+def add_wave_context(query_info, wave):
+    wave_info = dict(query_info)
+    wave_info["adaptive_wave"] = wave["wave"]
+    wave_info["adaptive_wave_label"] = wave["label"]
+    wave_info["adaptive_wave_activation"] = wave["activation"]
+    return wave_info
+
+
+def build_query_plan(providers, query_waves, requested_count, page_size, search_input):
     provider_page_caps = {}
     for provider in providers:
-        provider_queries[provider] = expand_queries_for_provider(provider, base_queries, requested_count)
         provider_page_caps[provider] = page_cap_for_provider(provider, search_input, requested_count, page_size)
 
     plan = []
     max_pages = max(provider_page_caps.values() or [1])
-    for page_index in range(max_pages):
-        for provider in providers:
-            if page_index >= provider_page_caps[provider]:
-                continue
-            for query_info in provider_queries[provider]:
-                plan.append(add_pagination_context(query_info, provider, page_index, page_size))
+    for wave in query_waves:
+        provider_queries = {
+            provider: expand_queries_for_provider(provider, wave["queries"], requested_count)
+            for provider in providers
+        }
+        for page_index in range(max_pages):
+            for provider in providers:
+                if page_index >= provider_page_caps[provider]:
+                    continue
+                for query_info in provider_queries[provider]:
+                    paginated_info = add_pagination_context(query_info, provider, page_index, page_size)
+                    plan.append(add_wave_context(paginated_info, wave))
     return plan
+
+
+def build_adaptive_wave_summaries(query_waves, query_plan):
+    planned_calls = {}
+    for query_info in query_plan:
+        wave_number = int(query_info.get("adaptive_wave", 1) or 1)
+        planned_calls[wave_number] = planned_calls.get(wave_number, 0) + 1
+
+    summaries = []
+    for wave in query_waves:
+        summaries.append(
+            {
+                "wave": wave["wave"],
+                "label": wave["label"],
+                "activation": wave["activation"],
+                "base_query_count": len(wave["queries"]),
+                "planned_calls": planned_calls.get(wave["wave"], 0),
+                "executed_calls": 0,
+                "raw_rows": 0,
+                "quality_rows": 0,
+                "accepted_rows": 0,
+                "started_unique_candidates": None,
+                "unique_candidates_after_wave": None,
+                "status": "not_needed",
+            }
+        )
+    return summaries
+
+
+def finalize_adaptive_wave_summaries(wave_summaries, final_unique_count, requested_count):
+    for summary in wave_summaries:
+        if not summary["executed_calls"]:
+            summary["status"] = "not_needed"
+            continue
+        if final_unique_count >= requested_count and summary["executed_calls"] < summary["planned_calls"]:
+            summary["status"] = "stopped_at_target"
+        else:
+            summary["status"] = "completed"
+        if summary["unique_candidates_after_wave"] is None:
+            summary["unique_candidates_after_wave"] = final_unique_count
+        if summary["started_unique_candidates"] is None:
+            summary["started_unique_candidates"] = 0
+    return wave_summaries
 
 
 def attach_query_context(rows, query_info):
@@ -619,9 +727,12 @@ def run_search(
         raise RuntimeError(f"{providers[0]} supports up to 20 results per search")
 
     base_queries = build_queries(search_input)
+    query_waves = split_queries_into_adaptive_waves(base_queries, requested_count)
     started_at = time.time()
     per_request_limit = min(requested_count, 20)
-    query_plan = build_query_plan(providers, base_queries, requested_count, per_request_limit, search_input)
+    query_plan = build_query_plan(providers, query_waves, requested_count, per_request_limit, search_input)
+    adaptive_wave_summaries = build_adaptive_wave_summaries(query_waves, query_plan)
+    adaptive_wave_map = {item["wave"]: item for item in adaptive_wave_summaries}
     executed_queries = []
     all_rows = []
     location_policy = search_input.get("location_policy") or "strict"
@@ -648,9 +759,15 @@ def run_search(
 
         query = query_info["query"]
         provider = query_info["provider"]
+        wave_number = int(query_info.get("adaptive_wave", 1) or 1)
+        wave_summary = adaptive_wave_map.get(wave_number)
+        if wave_summary and wave_summary["started_unique_candidates"] is None:
+            wave_summary["started_unique_candidates"] = len(dedupe_rows(all_rows))
         if provider in failed_providers:
             continue
         executed_queries.append(query_info)
+        if wave_summary:
+            wave_summary["executed_calls"] += 1
         try:
             if provider == "serpapi":
                 if not config["serpapi_api_key"]:
@@ -687,8 +804,12 @@ def run_search(
         rows = normalize_devpost_rows(rows)
         rows = [annotate_location_match(row, target_locations, location_metadata) for row in rows]
         add_diagnostic(diagnostics, provider, "raw_rows", len(rows))
+        if wave_summary:
+            wave_summary["raw_rows"] += len(rows)
         quality_rows = [row for row in rows if row_filter(row)]
         add_diagnostic(diagnostics, provider, "quality_rows", len(quality_rows))
+        if wave_summary:
+            wave_summary["quality_rows"] += len(quality_rows)
         if provider in verification_state["target_providers"] and location_policy == "strict" and verification_limit:
             quality_rows = verify_candidate_locations(
                 quality_rows,
@@ -718,8 +839,16 @@ def run_search(
             quality_rows = [row for row in quality_rows if row_matches_strict_locations(row, target_locations)]
         add_diagnostic(diagnostics, provider, "accepted_rows", len(quality_rows))
         all_rows.extend(quality_rows)
+        if wave_summary:
+            wave_summary["accepted_rows"] += len(quality_rows)
+            wave_summary["unique_candidates_after_wave"] = len(dedupe_rows(all_rows))
 
     rows = dedupe_rows(all_rows)[:requested_count]
+    adaptive_wave_summaries = finalize_adaptive_wave_summaries(
+        adaptive_wave_summaries,
+        len(rows),
+        requested_count,
+    )
     search_strategy = summarize_search_strategy(search_input, executed_queries)
     search_depth = str(search_input.get("search_depth") or "extended").strip().lower()
     search_strategy["search_depth"] = search_depth
@@ -729,6 +858,12 @@ def run_search(
     search_strategy["planned_query_count"] = len(query_plan)
     search_strategy["executed_query_count"] = len(executed_queries)
     search_strategy["provider_errors"] = provider_errors
+    search_strategy["adaptive_waves"] = {
+        "enabled": requested_count >= ADAPTIVE_WAVE_MIN_REQUESTED_COUNT and len(query_waves) > 1,
+        "planned_wave_count": len(query_waves),
+        "completed_wave_count": len([item for item in adaptive_wave_summaries if item["executed_calls"]]),
+        "waves": adaptive_wave_summaries,
+    }
     search_strategy["country_location"] = location_metadata or {}
     search_strategy["location_verification_providers"] = verification_state["providers"]
     search_strategy["location_verification_target_providers"] = sorted(verification_state["target_providers"])

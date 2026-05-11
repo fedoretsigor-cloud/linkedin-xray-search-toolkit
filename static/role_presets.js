@@ -121,6 +121,35 @@ window.ROLE_PRESETS = [
     ],
   },
   {
+    group: "Business Analysis",
+    presets: [
+      {
+        name: "Business Analyst",
+        role: "Business Analyst",
+        variants: ["Systems Analyst", "Requirements Analyst", "Functional Analyst", "Product Analyst"],
+        stacks: ["Requirements Analysis | BPMN | UML | Jira", "UAT | SQL | Agile | Stakeholder Management"],
+      },
+      {
+        name: "Systems Analyst",
+        role: "Systems Analyst",
+        variants: ["Business Systems Analyst", "Functional Analyst", "Technical Business Analyst"],
+        stacks: ["Systems Analysis | SQL | API | UML", "Requirements | Integration | Jira"],
+      },
+      {
+        name: "Product Owner",
+        role: "Product Owner",
+        variants: ["Business Analyst", "Product Manager", "Agile Product Owner"],
+        stacks: ["Backlog | User Stories | Agile | Scrum", "Roadmap | Stakeholders | Jira"],
+      },
+      {
+        name: "Functional Consultant",
+        role: "Functional Consultant",
+        variants: ["Functional Analyst", "Business Analyst", "Implementation Consultant"],
+        stacks: ["Requirements | Configuration | UAT | ERP", "Process Mapping | Stakeholder Management"],
+      },
+    ],
+  },
+  {
     group: "Data Engineering",
     presets: [
       {
@@ -138,6 +167,29 @@ window.ROLE_PRESETS = [
     ],
   },
   {
+    group: "Data / BI Analytics",
+    presets: [
+      {
+        name: "Data Analyst",
+        role: "Data Analyst",
+        variants: ["BI Analyst", "Reporting Analyst", "Analytics Analyst", "Product Analyst"],
+        stacks: ["SQL | Excel | Tableau | Power BI", "Python | Looker | BigQuery | Snowflake"],
+      },
+      {
+        name: "BI Analyst",
+        role: "BI Analyst",
+        variants: ["Business Intelligence Analyst", "Reporting Analyst", "Data Analyst"],
+        stacks: ["Power BI | Tableau | SQL | DAX", "Looker | KPI Reporting | Data Modeling"],
+      },
+      {
+        name: "Product Analyst",
+        role: "Product Analyst",
+        variants: ["Data Analyst", "Growth Analyst", "Analytics Analyst"],
+        stacks: ["SQL | Product Metrics | A/B Testing | Amplitude", "Mixpanel | Python | Tableau"],
+      },
+    ],
+  },
+  {
     group: "ML / AI Engineering",
     presets: [
       {
@@ -151,6 +203,87 @@ window.ROLE_PRESETS = [
         role: "LLM Engineer",
         variants: ["AI Engineer", "Generative AI Engineer", "NLP Engineer", "Prompt Engineer"],
         stacks: ["Python | LLM | RAG | LangChain", "OpenAI | Vector Database | MLOps"],
+      },
+    ],
+  },
+  {
+    group: "Product / Project Management",
+    presets: [
+      {
+        name: "Product Manager",
+        role: "Product Manager",
+        variants: ["Product Owner", "Technical Product Manager", "Product Lead"],
+        stacks: ["Roadmap | Product Strategy | Discovery | Analytics", "Backlog | User Stories | B2B SaaS"],
+      },
+      {
+        name: "Project Manager",
+        role: "Project Manager",
+        variants: ["IT Project Manager", "Technical Project Manager", "Program Manager"],
+        stacks: ["Agile | Scrum | Jira | Delivery", "Planning | Risk Management | Stakeholders"],
+      },
+      {
+        name: "Delivery Manager",
+        role: "Delivery Manager",
+        variants: ["Project Manager", "Program Manager", "Engagement Manager"],
+        stacks: ["Delivery Management | Agile | Stakeholders | Roadmap", "Budget | Risk | Resource Planning"],
+      },
+      {
+        name: "Scrum Master",
+        role: "Scrum Master",
+        variants: ["Agile Coach", "Agile Project Manager", "Delivery Manager"],
+        stacks: ["Scrum | Agile | Jira | Facilitation", "Kanban | Team Coaching | Retrospectives"],
+      },
+    ],
+  },
+  {
+    group: "Architecture / Leadership",
+    presets: [
+      {
+        name: "Solution Architect",
+        role: "Solution Architect",
+        variants: ["Software Architect", "Technical Architect", "Enterprise Architect"],
+        stacks: ["Cloud | Microservices | Integration | API", "AWS | Azure | Architecture | Security"],
+      },
+      {
+        name: "Software Architect",
+        role: "Software Architect",
+        variants: ["Solution Architect", "Technical Architect", "Lead Software Engineer"],
+        stacks: ["Architecture | Microservices | Java | Cloud", "Distributed Systems | API | Kubernetes"],
+      },
+      {
+        name: "Engineering Manager",
+        role: "Engineering Manager",
+        variants: ["Software Engineering Manager", "Development Manager", "Technical Manager"],
+        stacks: ["People Management | Delivery | Agile | Hiring", "Engineering Leadership | Roadmap | Stakeholders"],
+      },
+      {
+        name: "Tech Lead",
+        role: "Tech Lead",
+        variants: ["Technical Lead", "Lead Developer", "Lead Software Engineer"],
+        stacks: ["Architecture | Code Review | Mentoring | Delivery", "Java | Cloud | Microservices"],
+      },
+    ],
+  },
+  {
+    group: "UX / Product Design",
+    presets: [
+      {
+        name: "Product Designer",
+        role: "Product Designer",
+        variants: ["UX Designer", "UI/UX Designer", "Interaction Designer"],
+        stacks: ["Figma | Design Systems | Prototyping", "User Research | UX | UI"],
+      },
+      {
+        name: "UX/UI Designer",
+        role: "UX/UI Designer",
+        variants: ["UX Designer", "UI Designer", "Product Designer"],
+        stacks: ["Figma | Wireframes | Prototyping", "Design Systems | Accessibility | User Flows"],
+      },
+      {
+        name: "UX Researcher",
+        role: "UX Researcher",
+        variants: ["User Researcher", "UX Analyst", "Product Researcher"],
+        stacks: ["User Interviews | Usability Testing | Research", "Surveys | Journey Mapping | Personas"],
       },
     ],
   },

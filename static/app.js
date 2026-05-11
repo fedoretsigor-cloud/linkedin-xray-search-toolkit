@@ -76,6 +76,25 @@ const SEARCH_INTENT_TERMS = [
   ["spring", "Spring", "tooling"],
   ["kafka", "Kafka", "tooling"],
   ["aws", "AWS", "tooling"],
+  ["sql", "SQL", "language"],
+  ["power bi", "Power BI", "tooling"],
+  ["tableau", "Tableau", "tooling"],
+  ["looker", "Looker", "tooling"],
+  ["excel", "Excel", "tooling"],
+  ["jira", "Jira", "tooling"],
+  ["confluence", "Confluence", "tooling"],
+  ["bpmn", "BPMN", "methodology"],
+  ["uml", "UML", "methodology"],
+  ["uat", "UAT", "methodology"],
+  ["scrum", "Scrum", "methodology"],
+  ["agile", "Agile", "methodology"],
+  ["roadmap", "roadmap", "domain"],
+  ["backlog", "backlog", "domain"],
+  ["stakeholder", "stakeholder management", "domain"],
+  ["requirements analysis", "requirements analysis", "domain"],
+  ["figma", "Figma", "tooling"],
+  ["design systems", "design systems", "domain"],
+  ["user research", "user research", "domain"],
   ["front office", "Front Office", "domain"],
   ["power trading", "Power Trading", "domain"],
   ["energy trading", "Energy Trading", "domain"],
@@ -129,6 +148,21 @@ const ROLE_PATTERN_FAMILIES = [
     toolTerms: ["Orchestrade", "Endur"],
   },
   {
+    family: "Business Analysis",
+    triggers: [
+      "business analyst",
+      "systems analyst",
+      "system analyst",
+      "requirements analyst",
+      "functional analyst",
+      "functional consultant",
+      "business systems analyst",
+      "technical business analyst",
+    ],
+    coreTerms: ["Business"],
+    roleTerms: ["Analyst", "Systems Analyst", "Requirements Analyst", "Functional Analyst"],
+  },
+  {
     family: "QA Automation",
     triggers: ["qa", "quality assurance", "test automation", "automation test", "automated test", "sdet", "tester"],
     coreTerms: ["Automation"],
@@ -177,10 +211,76 @@ const ROLE_PATTERN_FAMILIES = [
     roleTerms: ["Engineer", "ETL", "Pipeline Engineer", "Analytics Engineer"],
   },
   {
+    family: "Data / BI Analytics",
+    triggers: [
+      "data analyst",
+      "bi analyst",
+      "business intelligence",
+      "reporting analyst",
+      "analytics analyst",
+      "product analyst",
+      "growth analyst",
+    ],
+    coreTerms: ["Data", "BI", "Analytics"],
+    roleTerms: ["Analyst", "Business Intelligence Analyst", "Reporting Analyst", "Product Analyst"],
+  },
+  {
     family: "ML / AI Engineer",
     triggers: ["machine learning", "ml engineer", "ai engineer", "applied scientist"],
     coreTerms: ["Machine Learning", "ML", "AI"],
     roleTerms: ["Engineer", "Applied Scientist", "Research Engineer"],
+  },
+  {
+    family: "Product Management",
+    triggers: ["product manager", "product owner", "technical product manager", "product lead", "product management"],
+    coreTerms: ["Product"],
+    roleTerms: ["Manager", "Owner", "Product Lead", "Technical Product Manager"],
+  },
+  {
+    family: "Project / Delivery Management",
+    triggers: [
+      "project manager",
+      "program manager",
+      "delivery manager",
+      "scrum master",
+      "agile coach",
+      "technical project manager",
+      "engagement manager",
+    ],
+    coreTerms: ["Project", "Program", "Delivery"],
+    roleTerms: ["Manager", "Scrum Master", "Agile Coach"],
+  },
+  {
+    family: "Architecture / Leadership",
+    triggers: [
+      "solution architect",
+      "software architect",
+      "technical architect",
+      "enterprise architect",
+      "engineering manager",
+      "development manager",
+      "technical manager",
+      "tech lead",
+      "technical lead",
+      "lead software engineer",
+    ],
+    coreTerms: ["Solution", "Software", "Technical", "Engineering"],
+    roleTerms: ["Architect", "Manager", "Tech Lead", "Technical Lead"],
+  },
+  {
+    family: "UX / Product Design",
+    triggers: [
+      "product designer",
+      "ux designer",
+      "ui designer",
+      "ui/ux",
+      "ux/ui",
+      "interaction designer",
+      "ux researcher",
+      "user researcher",
+    ],
+    coreTerms: ["Product", "UX", "UI"],
+    roleTerms: ["Designer", "Researcher", "Interaction Designer"],
   },
   {
     family: "Embedded",
@@ -218,6 +318,20 @@ const FAMILY_DEFAULT_QUERY_GROUPS = {
     ["Puppeteer"],
     ["Jenkins", "GitLab"],
     ["API testing", "REST"],
+  ],
+  "Business Analysis": [
+    ["requirements analysis", "business requirements"],
+    ["BPMN", "UML", "process mapping"],
+    ["Jira", "Confluence"],
+    ["UAT", "user acceptance testing"],
+    ["SQL", "data analysis"],
+    ["stakeholder management", "workshops"],
+    ["Agile", "Scrum"],
+    ["API", "integration"],
+    ["user stories", "acceptance criteria"],
+    ["ERP", "CRM"],
+    ["financial services", "banking"],
+    ["documentation", "functional specifications"],
   ],
   Frontend: [
     ["JavaScript", "TypeScript"],
@@ -279,6 +393,20 @@ const FAMILY_DEFAULT_QUERY_GROUPS = {
     ["AWS", "GCP", "Azure"],
     ["data pipelines"],
   ],
+  "Data / BI Analytics": [
+    ["SQL", "Excel"],
+    ["Power BI", "DAX"],
+    ["Tableau", "Looker"],
+    ["dashboard", "reporting"],
+    ["KPI", "metrics"],
+    ["Python", "R"],
+    ["Snowflake", "BigQuery"],
+    ["data visualization", "analytics"],
+    ["A/B testing", "experimentation"],
+    ["product analytics", "Amplitude"],
+    ["Mixpanel", "Google Analytics"],
+    ["data modeling", "ETL"],
+  ],
   "ML / AI Engineer": [
     ["Python", "machine learning"],
     ["PyTorch", "TensorFlow"],
@@ -288,6 +416,62 @@ const FAMILY_DEFAULT_QUERY_GROUPS = {
     ["computer vision"],
     ["AWS", "GCP", "Azure"],
     ["vector search", "embeddings"],
+  ],
+  "Product Management": [
+    ["roadmap", "product strategy"],
+    ["discovery", "user research"],
+    ["backlog", "user stories"],
+    ["B2B", "SaaS"],
+    ["analytics", "metrics"],
+    ["A/B testing", "experimentation"],
+    ["stakeholder management", "go-to-market"],
+    ["Jira", "Confluence"],
+    ["Agile", "Scrum"],
+    ["market research", "competitive analysis"],
+    ["product-led growth", "PLG"],
+    ["API", "platform"],
+  ],
+  "Project / Delivery Management": [
+    ["project management", "delivery management"],
+    ["Agile", "Scrum"],
+    ["Jira", "Confluence"],
+    ["risk management", "planning"],
+    ["stakeholder management", "communication"],
+    ["budget", "resource planning"],
+    ["program management", "portfolio"],
+    ["Kanban", "retrospectives"],
+    ["roadmap", "milestones"],
+    ["vendor management", "outsourcing"],
+    ["PMP", "Prince2"],
+    ["software delivery", "SDLC"],
+  ],
+  "Architecture / Leadership": [
+    ["architecture", "solution design"],
+    ["cloud", "AWS", "Azure"],
+    ["microservices", "distributed systems"],
+    ["API", "integration"],
+    ["Kubernetes", "Docker"],
+    ["security", "scalability"],
+    ["enterprise architecture", "TOGAF"],
+    ["technical leadership", "mentoring"],
+    ["people management", "hiring"],
+    ["roadmap", "delivery"],
+    ["Java", ".NET"],
+    ["event-driven", "Kafka"],
+  ],
+  "UX / Product Design": [
+    ["Figma", "Sketch"],
+    ["design systems", "UI"],
+    ["UX research", "user interviews"],
+    ["prototyping", "wireframes"],
+    ["usability testing", "accessibility"],
+    ["interaction design", "user flows"],
+    ["journey mapping", "personas"],
+    ["mobile design", "web design"],
+    ["product design", "SaaS"],
+    ["information architecture", "IA"],
+    ["A/B testing", "experimentation"],
+    ["design thinking", "workshops"],
   ],
   Embedded: [
     ["C", "C++"],
@@ -855,6 +1039,52 @@ function formatReportPercent(value, total) {
   return `${Math.round((numerator / denominator) * 100)}%`;
 }
 
+function formatWaveStatus(status) {
+  const labels = {
+    completed: "Completed",
+    not_needed: "Not needed",
+    stopped_at_target: "Stopped at target",
+  };
+  return labels[status] || status || "-";
+}
+
+function renderAdaptiveWaveReport(adaptiveWaves) {
+  const waves = Array.isArray(adaptiveWaves?.waves) ? adaptiveWaves.waves : [];
+  if (!waves.length || (!adaptiveWaves?.enabled && waves.length <= 1)) return "";
+
+  return `
+    <details class="provider-report-waves">
+      <summary>Adaptive waves (${escapeHtml(toReportNumber(adaptiveWaves.completed_wave_count).toLocaleString())}/${escapeHtml(toReportNumber(adaptiveWaves.planned_wave_count).toLocaleString())} used)</summary>
+      <div class="provider-report-table-wrap">
+        <table class="provider-report-table">
+          <thead>
+            <tr>
+              <th>Wave</th>
+              <th>Status</th>
+              <th>Calls</th>
+              <th>Raw</th>
+              <th>Accepted</th>
+              <th>Unique after wave</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${waves.map((wave) => `
+              <tr>
+                <td><strong>${escapeHtml(wave.label || `Wave ${wave.wave}`)}</strong></td>
+                <td>${escapeHtml(formatWaveStatus(wave.status))}</td>
+                <td>${escapeHtml(toReportNumber(wave.executed_calls).toLocaleString())}/${escapeHtml(toReportNumber(wave.planned_calls).toLocaleString())}</td>
+                <td>${escapeHtml(toReportNumber(wave.raw_rows).toLocaleString())}</td>
+                <td>${escapeHtml(toReportNumber(wave.accepted_rows).toLocaleString())}</td>
+                <td><span class="provider-lift">${escapeHtml(toReportNumber(wave.unique_candidates_after_wave).toLocaleString())}</span></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  `;
+}
+
 function csvCell(value) {
   const text = String(value ?? "");
   return `"${text.replaceAll('"', '""')}"`;
@@ -972,6 +1202,7 @@ function renderSearchDiagnostics(run) {
       <p class="provider-report-note">
         Unique lift is attributed to the provider whose row survived dedupe first. This is enough to compare provider value without exposing noisy raw diagnostics in the main table.
       </p>
+      ${renderAdaptiveWaveReport(run?.search_strategy?.adaptive_waves)}
     </div>
   `;
   container.querySelector("[data-provider-report-export]")?.addEventListener("click", () => {
@@ -1664,6 +1895,13 @@ function buildGroupedAnchorQueryCount(rolePattern, locations, sources) {
   return variantCount * Math.max(locations.length, 1) * Math.max(sources.length, 1);
 }
 
+function getAdaptiveWaveCount(baseQueryCount, resultsLimit) {
+  const requested = Number(resultsLimit) || 20;
+  if (requested < 100 || baseQueryCount <= 1) return 1;
+  if (requested >= 200 && baseQueryCount >= 3) return 3;
+  return Math.min(2, baseQueryCount);
+}
+
 function applyProviderDepthToPreview(baseQueries, providers) {
   const queryGroups = [];
   baseQueries.forEach((query) => {
@@ -1699,6 +1937,10 @@ function buildStrategyPreviewFromForm() {
   const baseQueryCount = isGroupedAnchorStrategy
     ? buildGroupedAnchorQueryCount(rolePattern, locations, sources)
     : Math.max(expandedSkillGroups.length, 1) * Math.max(locations.length, 1) * Math.max(sources.length, 1);
+  const adaptiveWaveCount = getAdaptiveWaveCount(baseQueryCount, form.num.value);
+  const adaptiveWaveDisabledReason = Number(form.num.value) >= 100
+    ? "Adaptive waves: off because the current fields produce only one query group."
+    : "Adaptive waves: off for this smaller search.";
   const providerPasses = countProviderPasses(searchDepth.providers, searchDepth);
   const queryCount = baseQueryCount * providerPasses;
   let sampleQueries = [];
@@ -1740,6 +1982,9 @@ function buildStrategyPreviewFromForm() {
     providers: searchDepth.providers,
     provider_passes: providerPasses,
     base_query_count: baseQueryCount,
+    adaptive_wave_count: adaptiveWaveCount,
+    adaptive_waves_enabled: adaptiveWaveCount > 1,
+    adaptive_wave_disabled_reason: adaptiveWaveDisabledReason,
     query_count: queryCount,
     location_policy: "strict",
     sample_queries: sampleQueries.slice(0, 5),
@@ -1793,7 +2038,10 @@ function renderSearchStrategyPreview() {
     </details>
     <details class="brief-details">
       <summary>Result limit</summary>
-      <ul><li>All planned searches can run; final candidate list is deduped and capped by Results Limit.</li></ul>
+      <ul>
+        <li>Final candidate list is deduped and capped by Results Limit.</li>
+        <li>${strategy.adaptive_waves_enabled ? `Adaptive waves: ${escapeHtml(strategy.adaptive_wave_count)} waves; later waves run only if the current fields still have not filled the requested limit.` : escapeHtml(strategy.adaptive_wave_disabled_reason)}</li>
+      </ul>
     </details>
     <details class="brief-details" open>
       <summary>Search depth</summary>
@@ -2062,9 +2310,11 @@ function renderResults(run) {
   const locationPolicy = run.search_strategy?.location_policy === "strict" ? " - strict location" : "";
   const providers = Array.isArray(run.search_strategy?.providers) ? run.search_strategy.providers : [];
   const providerCopy = providers.length ? ` - ${providers.map(formatProviderLabel).join(" + ")}` : "";
+  const completedWaves = Number(run.search_strategy?.adaptive_waves?.completed_wave_count || 0);
+  const waveCopy = completedWaves > 1 ? ` - ${completedWaves} waves` : "";
   const providerErrors = Array.isArray(run.provider_errors) ? run.provider_errors : [];
   const warningCopy = providerErrors.length ? ` - ${providerErrors.length} provider warning${providerErrors.length === 1 ? "" : "s"}` : "";
-  meta.textContent = `${run.candidates.length} candidates - ${run.queries_count} queries - ${run.duration_seconds}s${locationPolicy}${providerCopy}${warningCopy}${projectCopy}`;
+  meta.textContent = `${run.candidates.length} candidates - ${run.queries_count} queries - ${run.duration_seconds}s${locationPolicy}${providerCopy}${waveCopy}${warningCopy}${projectCopy}`;
   renderProviderAlerts(providerErrors);
   renderSearchDiagnostics(run);
 
