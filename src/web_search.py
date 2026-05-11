@@ -185,6 +185,7 @@ def transform_candidates(rows, search):
 
 def build_run_record(search, search_result):
     candidates = transform_candidates(search_result["rows"], search)
+    search_strategy = search_result.get("search_strategy", {})
     return {
         "id": uuid.uuid4().hex[:10],
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -193,7 +194,8 @@ def build_run_record(search, search_result):
         "requirement_url": search.get("requirement_url", ""),
         "requirement_brief": search.get("requirement_brief"),
         "confirmed_brief": search.get("confirmed_brief"),
-        "search_strategy": search_result.get("search_strategy", {}),
+        "search_strategy": search_strategy,
+        "provider_contribution_report": search_strategy.get("provider_contribution_report", {}),
         "provider_errors": search_result.get("provider_errors", []),
         "queries": search_result["queries"],
         "queries_count": len(search_result["queries"]),

@@ -750,11 +750,233 @@ function renderProviderAlerts(errors) {
   }).join("");
 }
 
-function renderSearchDiagnostics() {
+function toReportNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function countByProvider(items, providerKey = "provider", { includeVerification = true } = {}) {
+  return (Array.isArray(items) ? items : []).reduce((counts, item) => {
+    if (!includeVerification && item?.query_type === "location_verification") return counts;
+    const provider = item?.[providerKey] || "unknown";
+    counts[provider] = (counts[provider] || 0) + 1;
+    return counts;
+  }, {});
+}
+
+function orderedProviderKeys(...sources) {
+  const keys = [];
+  const seen = new Set();
+  sources.forEach((source) => {
+    const values = Array.isArray(source) ? source : Object.keys(source || {});
+    values.forEach((value) => {
+      if (!value || seen.has(value)) return;
+      seen.add(value);
+      keys.push(value);
+    });
+  });
+  return keys;
+}
+
+function getProviderContributionReport(run) {
+  return run?.provider_contribution_report
+    || run?.search_strategy?.provider_contribution_report
+    || buildProviderContributionFallback(run);
+}
+
+function buildProviderContributionFallback(run) {
+  const strategy = run?.search_strategy || {};
+  const diagnostics = strategy.result_diagnostics || {};
+  const byProvider = diagnostics.by_provider || {};
+  const hasDiagnostics = Object.keys(byProvider).length > 0;
+  if (!hasDiagnostics) return null;
+
+  const queryProviders = Array.isArray(strategy.providers) ? strategy.providers : [];
+  const plannedCalls = countByProvider(run?.queries || [], "provider", { includeVerification: false });
+  const executedCalls = countByProvider(run?.queries || [], "provider", { includeVerification: false });
+  const verificationCalls = countByProvider(
+    (run?.queries || []).filter((item) => item.query_type === "location_verification"),
+    "provider",
+  );
+  const finalCandidates = countByProvider(run?.candidates || [], "search_provider");
+  const warnings = countByProvider(run?.provider_errors || [], "provider");
+  const providers = orderedProviderKeys(queryProviders, byProvider, finalCandidates, warnings).map((provider) => {
+    const stats = byProvider[provider] || {};
+    const acceptedRows = toReportNumber(stats.accepted_rows);
+    const finalCount = toReportNumber(finalCandidates[provider]);
+    return {
+      provider,
+      planned_calls: toReportNumber(plannedCalls[provider]),
+      executed_calls: toReportNumber(executedCalls[provider]),
+      verification_calls: toReportNumber(verificationCalls[provider]),
+      raw_rows: toReportNumber(stats.raw_rows),
+      quality_rows: toReportNumber(stats.quality_rows),
+      strict_location_rejected: toReportNumber(stats.strict_location_rejected),
+      accepted_rows: acceptedRows,
+      final_candidates: finalCount,
+      unique_lift: finalCount,
+      deduped_or_capped_out: Math.max(acceptedRows - finalCount, 0),
+      warning_count: toReportNumber(warnings[provider]),
+    };
+  });
+
+  return {
+    location_policy: strategy.location_policy || "strict",
+    providers,
+    totals: {
+      requested_candidates: toReportNumber(run?.search?.results_limit),
+      planned_calls: providers.reduce((sum, item) => sum + item.planned_calls, 0),
+      executed_calls: providers.reduce((sum, item) => sum + item.executed_calls, 0),
+      verification_calls: providers.reduce((sum, item) => sum + item.verification_calls, 0),
+      raw_rows: toReportNumber(diagnostics.raw_rows),
+      quality_rows: toReportNumber(diagnostics.quality_rows),
+      strict_location_rejected: toReportNumber(diagnostics.strict_location_rejected),
+      accepted_rows: toReportNumber(diagnostics.accepted_rows),
+      final_candidates: Array.isArray(run?.candidates) ? run.candidates.length : 0,
+      provider_warnings: Array.isArray(run?.provider_errors) ? run.provider_errors.length : 0,
+    },
+  };
+}
+
+function renderProviderReportMetric(label, value, subtext = "") {
+  return `
+    <div class="provider-report-metric">
+      <strong>${escapeHtml(toReportNumber(value).toLocaleString())}</strong>
+      <span>${escapeHtml(label)}</span>
+      ${subtext ? `<small>${escapeHtml(subtext)}</small>` : ""}
+    </div>
+  `;
+}
+
+function formatReportPercent(value, total) {
+  const numerator = toReportNumber(value);
+  const denominator = toReportNumber(total);
+  if (!denominator) return "0%";
+  return `${Math.round((numerator / denominator) * 100)}%`;
+}
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function providerReportToCsv(report, run) {
+  const headers = [
+    "Run ID",
+    "Provider",
+    "Planned calls",
+    "Executed calls",
+    "Verification calls",
+    "Raw rows",
+    "Quality rows",
+    "Strict location rejected",
+    "Accepted rows",
+    "Final unique candidates",
+    "Unique lift",
+    "Deduped or capped out",
+    "Warnings",
+  ];
+  const rows = (report.providers || []).map((provider) => [
+    run?.id || "",
+    formatProviderLabel(provider.provider),
+    provider.planned_calls,
+    provider.executed_calls,
+    provider.verification_calls,
+    provider.raw_rows,
+    provider.quality_rows,
+    provider.strict_location_rejected,
+    provider.accepted_rows,
+    provider.final_candidates,
+    provider.unique_lift,
+    provider.deduped_or_capped_out,
+    provider.warning_count,
+  ]);
+  return [
+    headers.map(csvCell).join(","),
+    ...rows.map((row) => row.map(csvCell).join(",")),
+  ].join("\n");
+}
+
+function downloadProviderReportCsv(report, run) {
+  const csv = providerReportToCsv(report, run);
+  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `provider-contribution-${run?.id || "search"}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function renderSearchDiagnostics(run) {
   const container = document.getElementById("search-diagnostics");
   if (!container) return;
-  container.innerHTML = "";
-  container.classList.add("hidden");
+  const report = getProviderContributionReport(run);
+  const providerRows = Array.isArray(report?.providers) ? report.providers : [];
+  if (!providerRows.length) {
+    container.innerHTML = "";
+    container.classList.add("hidden");
+    return;
+  }
+
+  const totals = report.totals || {};
+  container.classList.remove("hidden");
+  container.innerHTML = `
+    <div class="provider-report-card">
+      <div class="provider-report-header">
+        <div>
+          <strong>Provider Contribution Report</strong>
+          <p>Raw results -> strict-location filtering -> dedupe/cap -> final unique candidates.</p>
+        </div>
+        <button type="button" class="ghost-btn compact-btn" data-provider-report-export>Export CSV</button>
+      </div>
+      <div class="provider-report-metrics">
+        ${renderProviderReportMetric("raw rows", totals.raw_rows)}
+        ${renderProviderReportMetric("strict location rejected", totals.strict_location_rejected)}
+        ${renderProviderReportMetric("accepted after strict", totals.accepted_rows)}
+        ${renderProviderReportMetric("final unique candidates", totals.final_candidates, `${formatReportPercent(totals.final_candidates, totals.accepted_rows)} of accepted`)}
+        ${renderProviderReportMetric("executed provider calls", totals.executed_calls, `${toReportNumber(totals.verification_calls)} verification`)}
+      </div>
+      <div class="provider-report-table-wrap">
+        <table class="provider-report-table">
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Calls</th>
+              <th>Raw</th>
+              <th>Strict filtered</th>
+              <th>After strict</th>
+              <th>Final unique</th>
+              <th>Dedupe / cap</th>
+              <th>Warnings</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${providerRows.map((provider) => `
+              <tr>
+                <td><strong>${escapeHtml(formatProviderLabel(provider.provider))}</strong></td>
+                <td>${escapeHtml(toReportNumber(provider.executed_calls).toLocaleString())}/${escapeHtml(toReportNumber(provider.planned_calls).toLocaleString())}</td>
+                <td>${escapeHtml(toReportNumber(provider.raw_rows).toLocaleString())}</td>
+                <td>${escapeHtml(toReportNumber(provider.strict_location_rejected).toLocaleString())}</td>
+                <td>${escapeHtml(toReportNumber(provider.accepted_rows).toLocaleString())}</td>
+                <td><span class="provider-lift">${escapeHtml(toReportNumber(provider.final_candidates).toLocaleString())}</span></td>
+                <td>${escapeHtml(toReportNumber(provider.deduped_or_capped_out).toLocaleString())}</td>
+                <td>${escapeHtml(toReportNumber(provider.warning_count).toLocaleString())}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+      <p class="provider-report-note">
+        Unique lift is attributed to the provider whose row survived dedupe first. This is enough to compare provider value without exposing noisy raw diagnostics in the main table.
+      </p>
+    </div>
+  `;
+  container.querySelector("[data-provider-report-export]")?.addEventListener("click", () => {
+    downloadProviderReportCsv(report, run);
+  });
 }
 
 function startSearchProgress(data) {
@@ -1844,7 +2066,7 @@ function renderResults(run) {
   const warningCopy = providerErrors.length ? ` - ${providerErrors.length} provider warning${providerErrors.length === 1 ? "" : "s"}` : "";
   meta.textContent = `${run.candidates.length} candidates - ${run.queries_count} queries - ${run.duration_seconds}s${locationPolicy}${providerCopy}${warningCopy}${projectCopy}`;
   renderProviderAlerts(providerErrors);
-  renderSearchDiagnostics(run.search_strategy);
+  renderSearchDiagnostics(run);
 
   const empty = document.getElementById("results-state");
   const wrapper = document.getElementById("results-table-wrapper");

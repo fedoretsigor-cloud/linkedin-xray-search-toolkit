@@ -196,6 +196,7 @@ Current implementation:
 - `.env.example` documents `SERPAPI_API_KEY`, `SERPER_API_KEY`, `TAVILY_API_KEY`, location verification settings, and OpenAI settings.
 - Provider diagnostics are stored in `search_strategy.result_diagnostics` for analysis, including raw rows, quality rows, accepted rows, strict-location rejects, verification attempts, and provider breakdowns.
 - Detailed diagnostics are hidden from the main results UI by default so the recruiter sees a cleaner candidate table, while the run JSON remains auditable.
+- A compact Provider Contribution Report is now shown after each search and can be exported to CSV. It summarizes raw rows, strict-location rejects, accepted rows, final unique candidates, dedupe/cap loss, executed calls, and warnings per provider.
 - Search runs store the actual executed provider queries, including page/start/first offsets, so we can audit what was sent after early stopping.
 - Hybrid role presets and editable role variants are implemented.
 - Query expansion now prefers meaningful family-specific search angles over repeated identical queries or noisy generic boosters.
@@ -211,7 +212,7 @@ Remaining work:
 
 - Improve source-specific search behavior per source.
 - Benchmark provider quality across Standard, Medium, Extended, and Max search depths.
-- Add a compact internal/export view for provider contribution reporting instead of showing raw diagnostics in the main candidate results screen.
+- Improve the Provider Contribution Report with query-group-level breakdowns after enough real benchmark runs.
 - Add a Projects UI so users can browse projects directly, not only search history.
 - Decide whether Render production should use persistent disk/database instead of local JSON for long-term storage.
 
@@ -511,7 +512,7 @@ Recommended next build order:
 16. Done first slice: Add strict country-level LinkedIn subdomain proof for country searches, while keeping city searches strict on city evidence.
 17. Done first slice: Increase Max depth API pagination to 10 pages for paginated providers.
 18. Done first slice: Store provider diagnostics and executed-query audit trails while hiding the noisy diagnostics block from the main UI.
-19. Next: Add provider contribution reporting for raw, filtered, deduped, and unique-lift counts in an internal/reporting view.
+19. Done first slice: Add provider contribution reporting for raw, filtered, deduped, and unique-lift counts with CSV export.
 20. Next: Add adaptive second/third search waves when a 100/200-candidate search returns too few unique results.
 21. Later: Add decision memory across profile and resume review.
 22. Later: Add conversational sourcing copilot on top of stable workflow actions.
@@ -590,6 +591,7 @@ Completed:
 - Strict location filtering now treats query text alone as insufficient evidence.
 - Country-only searches can use LinkedIn country subdomains as local proof, for example `pl.linkedin.com` for Poland, while city searches still require city evidence from indexed profile/header/snippet text.
 - Provider diagnostics are stored in run JSON but hidden from the main UI.
+- Provider Contribution Report now surfaces compact per-provider raw rows, strict-location rejects, accepted rows, final unique candidates, dedupe/cap loss, executed calls, and CSV export.
 - Executed-query audit files can be generated from saved runs to inspect the exact provider queries and pagination offsets that were sent.
 - Server log files are ignored by Git.
 
@@ -605,6 +607,6 @@ In progress:
 
 Next recommended product step:
 
-- Run side-by-side benchmarks for Standard, Medium, Extended, and Max on the same requirement. Use saved diagnostics and executed-query audits to compare actual provider contribution, not just planned query counts.
-- Add a compact provider contribution report that shows raw rows, accepted rows, final deduped candidates, and unique lift per provider without showing noisy diagnostics in the main recruiter UI.
+- Run side-by-side benchmarks for Standard, Medium, Extended, and Max on the same requirement. Use the Provider Contribution Report, saved diagnostics, and executed-query audits to compare actual provider contribution, not just planned query counts.
+- Add adaptive second/third search waves when a 100/200-candidate search returns too few unique results after strict filtering and dedupe.
 - Test the next provider shortlist with the same X-Ray query set and compare raw LinkedIn URLs, strict-location survivors, deduped candidates, cost, and pagination behavior.

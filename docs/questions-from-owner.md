@@ -267,6 +267,7 @@ Implementation note:
 - That run's final deduped provider contribution was: Bing / SerpApi 85, Google / SerpApi 55, Tavily 38, Google / Serper 22.
 - Before final dedupe/cap, Google / Serper had the largest accepted-row pool in that run, so no current Max provider should be removed yet.
 - Provider diagnostics are stored in run JSON for analysis, but the noisy diagnostics cards are hidden from the main UI.
+- Provider Contribution Report is now visible after each search and exportable to CSV. It shows raw rows, strict-location rejects, accepted rows, final unique candidates, dedupe/cap loss, executed calls, and warnings per provider.
 - The next search-engine improvement should be adaptive waves: wave 1 focused groups, wave 2 alternate role/skill groups, wave 3 broader discovery groups if still below target.
 
 Next provider evaluation shortlist:

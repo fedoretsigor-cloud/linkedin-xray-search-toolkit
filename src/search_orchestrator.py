@@ -295,6 +295,120 @@ def add_diagnostic(diagnostics, provider, key, count=1):
     provider_stats[key] = provider_stats.get(key, 0) + count
 
 
+def count_items_by_provider(items, *, provider_key="provider", include_verification=True):
+    counts = {}
+    for item in items or []:
+        if not include_verification and item.get("query_type") == "location_verification":
+            continue
+        provider = item.get(provider_key) or "unknown"
+        counts[provider] = counts.get(provider, 0) + 1
+    return counts
+
+
+def ordered_provider_keys(providers, *provider_maps):
+    ordered = []
+    seen = set()
+    for provider in providers or []:
+        if provider and provider not in seen:
+            ordered.append(provider)
+            seen.add(provider)
+    for provider_map in provider_maps:
+        for provider in provider_map or {}:
+            if provider and provider not in seen:
+                ordered.append(provider)
+                seen.add(provider)
+    return ordered
+
+
+def provider_warning_counts(provider_errors):
+    counts = {}
+    for error in provider_errors or []:
+        provider = error.get("provider") or "unknown"
+        counts[provider] = counts.get(provider, 0) + 1
+    return counts
+
+
+def build_provider_contribution_report(
+    *,
+    providers,
+    query_plan,
+    executed_queries,
+    diagnostics,
+    final_rows,
+    provider_errors,
+    requested_count,
+    location_policy,
+):
+    by_provider = diagnostics.get("by_provider", {}) if isinstance(diagnostics, dict) else {}
+    planned_calls = count_items_by_provider(query_plan, include_verification=False)
+    executed_calls = count_items_by_provider(executed_queries, include_verification=False)
+    verification_calls = count_items_by_provider(
+        [item for item in executed_queries or [] if item.get("query_type") == "location_verification"],
+        include_verification=True,
+    )
+    final_candidates = count_items_by_provider(final_rows, provider_key="search_provider")
+    warnings = provider_warning_counts(provider_errors)
+    provider_keys = ordered_provider_keys(
+        providers,
+        planned_calls,
+        executed_calls,
+        verification_calls,
+        by_provider,
+        final_candidates,
+        warnings,
+    )
+
+    provider_rows = []
+    for provider in provider_keys:
+        stats = by_provider.get(provider, {})
+        accepted_rows = int(stats.get("accepted_rows", 0) or 0)
+        final_count = int(final_candidates.get(provider, 0) or 0)
+        raw_rows = int(stats.get("raw_rows", 0) or 0)
+        strict_rejected = int(stats.get("strict_location_rejected", 0) or 0)
+        provider_rows.append(
+            {
+                "provider": provider,
+                "planned_calls": int(planned_calls.get(provider, 0) or 0),
+                "executed_calls": int(executed_calls.get(provider, 0) or 0),
+                "verification_calls": int(verification_calls.get(provider, 0) or 0),
+                "raw_rows": raw_rows,
+                "quality_rows": int(stats.get("quality_rows", 0) or 0),
+                "strict_location_rejected": strict_rejected,
+                "accepted_rows": accepted_rows,
+                "final_candidates": final_count,
+                "unique_lift": final_count,
+                "deduped_or_capped_out": max(accepted_rows - final_count, 0),
+                "warning_count": int(warnings.get(provider, 0) or 0),
+            }
+        )
+
+    totals = {
+        "requested_candidates": int(requested_count or 0),
+        "planned_calls": sum(item["planned_calls"] for item in provider_rows),
+        "executed_calls": sum(item["executed_calls"] for item in provider_rows),
+        "verification_calls": sum(item["verification_calls"] for item in provider_rows),
+        "raw_rows": int((diagnostics or {}).get("raw_rows", 0) or 0),
+        "quality_rows": int((diagnostics or {}).get("quality_rows", 0) or 0),
+        "strict_location_rejected": int((diagnostics or {}).get("strict_location_rejected", 0) or 0),
+        "accepted_rows": int((diagnostics or {}).get("accepted_rows", 0) or 0),
+        "final_candidates": len(final_rows or []),
+        "provider_warnings": len(provider_errors or []),
+    }
+    totals["deduped_or_capped_out"] = max(totals["accepted_rows"] - totals["final_candidates"], 0)
+
+    return {
+        "location_policy": location_policy,
+        "providers": provider_rows,
+        "totals": totals,
+        "notes": [
+            "Raw rows are provider results before quality and strict-location filtering.",
+            "Accepted rows are quality rows that survived strict-location filtering.",
+            "Final unique candidates are counted after dedupe and result-limit capping.",
+            "Unique lift is attributed to the provider whose row survived dedupe first.",
+        ],
+    }
+
+
 def add_location_rejection_diagnostics(diagnostics, provider, row):
     add_diagnostic(diagnostics, provider, "strict_location_rejected")
     match = row.get("location_match") or {}
@@ -624,6 +738,16 @@ def run_search(
     diagnostics["verification_attempted"] = verification_state["attempts"]
     diagnostics["verification_confirmed"] = verification_state["confirmed"]
     search_strategy["result_diagnostics"] = diagnostics
+    search_strategy["provider_contribution_report"] = build_provider_contribution_report(
+        providers=providers,
+        query_plan=query_plan,
+        executed_queries=executed_queries,
+        diagnostics=diagnostics,
+        final_rows=rows,
+        provider_errors=provider_errors,
+        requested_count=requested_count,
+        location_policy=location_policy,
+    )
     return {
         "provider": "hybrid" if len(providers) > 1 else providers[0],
         "providers": providers,
