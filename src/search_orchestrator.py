@@ -16,7 +16,7 @@ from src.search_strategy import summarize_search_strategy
 
 
 HYBRID_DEFAULT_PROVIDERS = ["tavily", "bing_serpapi"]
-SUPPORTED_PROVIDERS = {"serpapi", "bing_serpapi", "brave", "tavily", "serper", "you"}
+SUPPORTED_PROVIDERS = {"serpapi", "bing_serpapi", "tavily", "serper"}
 PAGINATED_PROVIDERS = {"serpapi", "bing_serpapi", "serper"}
 SEARCH_DEPTH_PAGE_CAPS = {
     "standard": 1,
@@ -29,7 +29,6 @@ SEARCH_DEPTH_LABELS = {
     "medium": "Medium",
     "extended": "Extended",
     "max": "Max",
-    "you": "You.com Lab",
 }
 CREDIT_ERROR_MARKERS = (
     "credit",
@@ -336,7 +335,7 @@ def resolve_location_verification_providers(config):
 
 def resolve_location_verification_target_providers(config):
     providers = parse_provider_list(config.get("location_verification_target_providers"))
-    return set(providers or ["you"])
+    return set(providers)
 
 
 def verification_provider_is_configured(provider, config):
@@ -344,10 +343,6 @@ def verification_provider_is_configured(provider, config):
         return bool(config.get("serper_api_key"))
     if provider in {"serpapi", "bing_serpapi"}:
         return bool(config.get("serpapi_api_key"))
-    if provider == "brave":
-        return bool(config.get("brave_api_key"))
-    if provider == "you":
-        return bool(config.get("you_api_key"))
     if provider == "tavily":
         return bool(config.get("tavily_api_key"))
     return False
@@ -379,14 +374,10 @@ def search_location_verification_provider(
     per_request_limit,
     normalize_serpapi_items,
     normalize_bing_serpapi_items,
-    normalize_brave_items,
     normalize_serper_items,
-    normalize_you_items,
     search_serpapi,
     search_bing_serpapi,
-    search_brave,
     search_serper,
-    search_you,
 ):
     limit = min(per_request_limit, 5)
     if provider == "serper":
@@ -398,12 +389,6 @@ def search_location_verification_provider(
     if provider == "bing_serpapi":
         payload = search_bing_serpapi(config["serpapi_api_key"], query, limit)
         return normalize_bing_serpapi_items(query, payload)
-    if provider == "brave":
-        payload = search_brave(config["brave_api_key"], query, limit)
-        return normalize_brave_items(query, payload)
-    if provider == "you":
-        payload = search_you(config["you_api_key"], query, limit)
-        return normalize_you_items(query, payload)
     raise RuntimeError(f"Unsupported location verification provider: {provider}")
 
 
@@ -417,14 +402,10 @@ def verify_candidate_locations(
     location_metadata,
     normalize_serpapi_items,
     normalize_bing_serpapi_items,
-    normalize_brave_items,
     normalize_serper_items,
-    normalize_you_items,
     search_serpapi,
     search_bing_serpapi,
-    search_brave,
     search_serper,
-    search_you,
     executed_queries,
     provider_errors,
     diagnostics,
@@ -469,14 +450,10 @@ def verify_candidate_locations(
                     per_request_limit=per_request_limit,
                     normalize_serpapi_items=normalize_serpapi_items,
                     normalize_bing_serpapi_items=normalize_bing_serpapi_items,
-                    normalize_brave_items=normalize_brave_items,
                     normalize_serper_items=normalize_serper_items,
-                    normalize_you_items=normalize_you_items,
                     search_serpapi=search_serpapi,
                     search_bing_serpapi=search_bing_serpapi,
-                    search_brave=search_brave,
                     search_serper=search_serper,
-                    search_you=search_you,
                 )
             except (RuntimeError, requests.RequestException) as exc:
                 error = describe_provider_error(verification_provider, exc)
@@ -502,14 +479,10 @@ def run_search(
     build_queries,
     normalize_serpapi_items,
     normalize_bing_serpapi_items,
-    normalize_brave_items,
     normalize_serper_items,
-    normalize_you_items,
     search_serpapi,
     search_bing_serpapi,
-    search_brave,
     search_serper,
-    search_you,
     row_filter,
     progress_callback=None,
 ):
@@ -575,21 +548,11 @@ def run_search(
                     raise RuntimeError("Missing SERPAPI_API_KEY in .env")
                 payload = search_bing_serpapi(config["serpapi_api_key"], query, per_request_limit, first=query_info.get("first"))
                 rows = normalize_bing_serpapi_items(query, payload)
-            elif provider == "brave":
-                if not config["brave_api_key"]:
-                    raise RuntimeError("Missing BRAVE_SEARCH_API_KEY in .env")
-                payload = search_brave(config["brave_api_key"], query, per_request_limit)
-                rows = normalize_brave_items(query, payload)
             elif provider == "serper":
                 if not config["serper_api_key"]:
                     raise RuntimeError("Missing SERPER_API_KEY in .env")
                 payload = search_serper(config["serper_api_key"], query, per_request_limit, page=query_info.get("serper_page"))
                 rows = normalize_serper_items(query, payload)
-            elif provider == "you":
-                if not config["you_api_key"]:
-                    raise RuntimeError("Missing YOU_API_KEY in .env")
-                payload = search_you(config["you_api_key"], query, per_request_limit)
-                rows = normalize_you_items(query, payload)
             else:
                 payload = search_tavily(config["tavily_api_key"], query, per_request_limit)
                 rows = normalize_tavily_items(query, payload)
@@ -622,14 +585,10 @@ def run_search(
                 location_metadata=location_metadata,
                 normalize_serpapi_items=normalize_serpapi_items,
                 normalize_bing_serpapi_items=normalize_bing_serpapi_items,
-                normalize_brave_items=normalize_brave_items,
                 normalize_serper_items=normalize_serper_items,
-                normalize_you_items=normalize_you_items,
                 search_serpapi=search_serpapi,
                 search_bing_serpapi=search_bing_serpapi,
-                search_brave=search_brave,
                 search_serper=search_serper,
-                search_you=search_you,
                 executed_queries=executed_queries,
                 provider_errors=provider_errors,
                 diagnostics=diagnostics,

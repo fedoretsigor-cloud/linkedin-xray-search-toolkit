@@ -272,9 +272,7 @@ Implementation note:
 Next provider evaluation shortlist:
 
 1. SearchAPI.io
-2. Brave
-3. You.com Search API
-4. Exa
+2. Exa
 
 Evaluation criteria:
 

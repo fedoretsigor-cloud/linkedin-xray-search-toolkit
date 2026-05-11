@@ -187,13 +187,13 @@ Current implementation:
 - Tavily public search is wired into the app.
 - Search results are normalized, deduped, scored, and saved as search runs.
 - Hybrid provider orchestration is now supported. A run can execute the same query set across multiple search providers and dedupe the combined results.
-- Supported provider plumbing now includes Tavily, Bing via SerpApi, Google via SerpApi, Google via Serper, and Brave Search API.
+- Supported provider plumbing now includes Tavily, Bing via SerpApi, Google via SerpApi, and Google via Serper.
 - Search depth controls provider selection: Standard = Tavily; Medium = Tavily + Bing / SerpApi; Extended = Tavily + Bing / SerpApi + Google / SerpApi; Max = Tavily + Bing / SerpApi + Google / SerpApi + Google / Serper.
 - Max intentionally keeps the user-facing provider set focused on Tavily, Bing / SerpApi, Google / SerpApi, and Google / Serper. Experimental or noisy providers are kept out of the main UI until they prove useful in benchmarks.
 - Deep-result pagination is implemented through provider APIs, not browser automation. For 200-candidate Max searches, the planner can schedule up to 10 pages for each paginated provider.
 - Provider failures inside a multi-provider run are captured as provider warnings instead of failing the whole search when another provider can still return results.
 - Candidate records now retain the search provider that found them, so the UI can show where a profile came from.
-- `.env.example` documents `SERPAPI_API_KEY`, `BRAVE_SEARCH_API_KEY`, `SERPER_API_KEY`, `TAVILY_API_KEY`, `YOU_API_KEY`, location verification settings, and OpenAI settings.
+- `.env.example` documents `SERPAPI_API_KEY`, `SERPER_API_KEY`, `TAVILY_API_KEY`, location verification settings, and OpenAI settings.
 - Provider diagnostics are stored in `search_strategy.result_diagnostics` for analysis, including raw rows, quality rows, accepted rows, strict-location rejects, verification attempts, and provider breakdowns.
 - Detailed diagnostics are hidden from the main results UI by default so the recruiter sees a cleaner candidate table, while the run JSON remains auditable.
 - Search runs store the actual executed provider queries, including page/start/first offsets, so we can audit what was sent after early stopping.
@@ -210,7 +210,6 @@ Current implementation:
 Remaining work:
 
 - Improve source-specific search behavior per source.
-- Validate Brave Search API once account/card access is resolved and `BRAVE_SEARCH_API_KEY` is available.
 - Benchmark provider quality across Standard, Medium, Extended, and Max search depths.
 - Add a compact internal/export view for provider contribution reporting instead of showing raw diagnostics in the main candidate results screen.
 - Add a Projects UI so users can browse projects directly, not only search history.
@@ -580,7 +579,6 @@ Completed:
 - Hybrid search orchestration now supports multiple providers in one run and dedupes across providers.
 - Bing / SerpApi and Google / SerpApi were added as first hybrid search providers.
 - Google / Serper was added as a prepared fourth provider with `SERPER_API_KEY` configuration.
-- Brave Search API remains wired in code and ready for `BRAVE_SEARCH_API_KEY` once account access is resolved.
 - Search Depth UI added with Standard, Medium, Extended, and Max provider presets.
 - Max search depth now paginates up to 10 API pages for Bing / SerpApi, Google / SerpApi, and Google / Serper.
 - Max provider set is currently focused on Tavily, Bing / SerpApi, Google / SerpApi, and Google / Serper.
@@ -597,8 +595,8 @@ Completed:
 
 In progress:
 
-- Owner-led search-engine review, including Serper validation and Brave Search billing/access.
-- Next provider evaluation shortlist: SearchAPI.io, Brave, You.com Search API, and Exa.
+- Owner-led search-engine review, including Serper validation.
+- Next provider evaluation shortlist: SearchAPI.io and Exa.
 - Strict location filtering and UX validation on real Houston searches.
 - Provider-quality benchmarking across Standard, Medium, Extended, and Max search depths.
 - High-recall search planning for 100/200-candidate runs, including adaptive second/third waves.

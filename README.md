@@ -13,8 +13,8 @@ Portable toolkit for finding IT profiles on LinkedIn via X-Ray search without us
 ## Current Search Providers
 
 - `SerpApi` - recommended for Google-style X-Ray search
-- `Brave Search API` - optional alternative
 - `Tavily` - practical alternative with free monthly credits
+- `Serper` - optional Google-style search provider
 
 ## Make It Public
 
@@ -192,7 +192,6 @@ Example `.env` for SerpApi:
 SEARCH_PROVIDER=serpapi
 SEARCH_RESULTS_PER_QUERY=10
 SERPAPI_API_KEY=your_serpapi_key
-BRAVE_SEARCH_API_KEY=
 ```
 
 Example `.env` for Tavily:
@@ -201,7 +200,6 @@ Example `.env` for Tavily:
 SEARCH_PROVIDER=tavily
 SEARCH_RESULTS_PER_QUERY=10
 SERPAPI_API_KEY=
-BRAVE_SEARCH_API_KEY=
 TAVILY_API_KEY=your_tavily_api_key
 ```
 
@@ -254,6 +252,6 @@ Copy-Item .env.example .env
 
 - [SerpApi](https://serpapi.com/)
 - [SerpApi Google Search API](https://serpapi.com/search-api)
-- [Brave Search API](https://brave.com/search/api/)
+- [Serper](https://serper.dev/)
 - [Tavily Search API](https://docs.tavily.com/api-reference/endpoint/search)
 - [Google API keys docs](https://cloud.google.com/docs/authentication/api-keys)

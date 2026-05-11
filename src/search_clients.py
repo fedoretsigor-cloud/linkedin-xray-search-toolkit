@@ -2,9 +2,7 @@ import requests
 
 
 SERPAPI_URL = "https://serpapi.com/search.json"
-BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 SERPER_SEARCH_URL = "https://google.serper.dev/search"
-YOU_SEARCH_URL = "https://ydc-index.io/v1/search"
 
 
 def search_serpapi(api_key, query, num, start=None):
@@ -25,34 +23,12 @@ def search_bing_serpapi(api_key, query, num, first=None):
     return response.json()
 
 
-def search_brave(api_key, query, num):
-    headers = {"Accept": "application/json", "X-Subscription-Token": api_key}
-    params = {"q": query, "count": num}
-    response = requests.get(BRAVE_SEARCH_URL, headers=headers, params=params, timeout=30)
-    response.raise_for_status()
-    return response.json()
-
-
 def search_serper(api_key, query, num, page=None):
     headers = {"Content-Type": "application/json", "X-API-KEY": api_key}
     payload = {"q": query, "num": num}
     if page is not None:
         payload["page"] = page
     response = requests.post(SERPER_SEARCH_URL, headers=headers, json=payload, timeout=30)
-    response.raise_for_status()
-    return response.json()
-
-
-def search_you(api_key, query, num, offset=None):
-    headers = {"X-API-Key": api_key}
-    params = {
-        "query": query,
-        "count": min(int(num), 100),
-        "safesearch": "moderate",
-    }
-    if offset is not None:
-        params["offset"] = offset
-    response = requests.get(YOU_SEARCH_URL, headers=headers, params=params, timeout=45)
     response.raise_for_status()
     return response.json()
 

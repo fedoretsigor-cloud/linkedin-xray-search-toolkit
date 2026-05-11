@@ -354,7 +354,6 @@ function formatProviderLabel(value) {
     bing_serpapi: "Bing / SerpApi",
     serpapi: "Google / SerpApi",
     serper: "Google / Serper",
-    brave: "Brave",
   };
   return labels[key] || formatTitleCaseValue(key.replaceAll("_", " "));
 }
