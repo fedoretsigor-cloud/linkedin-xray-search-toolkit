@@ -534,6 +534,20 @@ function formatProviderLabel(value) {
   return labels[key] || formatTitleCaseValue(key.replaceAll("_", " "));
 }
 
+function formatSearchSourceLabel(value) {
+  const key = String(value || "").trim().toLowerCase();
+  const labels = {
+    linkedin: "LinkedIn",
+    github: "GitHub",
+    facebook: "Facebook",
+    stackoverflow: "Stack Overflow",
+    "stack overflow": "Stack Overflow",
+    wellfound: "Wellfound",
+    devpost: "Devpost",
+  };
+  return labels[key] || formatTitleCaseValue(key.replaceAll("_", " "));
+}
+
 function formatProviderErrorKind(kind) {
   const labels = {
     credits: "Credits / quota issue",
@@ -1333,6 +1347,162 @@ function renderQueryGroupContributionReport(report) {
   `;
 }
 
+function formatSearchExplanationList(values, fallback = "-") {
+  const items = Array.isArray(values) ? values.filter(Boolean) : [];
+  return items.length ? items.join(", ") : fallback;
+}
+
+function getTopProviderContribution(report, limit = 3) {
+  const providers = Array.isArray(report?.providers) ? report.providers : [];
+  return providers
+    .filter((provider) => toReportNumber(provider.final_candidates) > 0)
+    .sort((left, right) => toReportNumber(right.final_candidates) - toReportNumber(left.final_candidates))
+    .slice(0, limit);
+}
+
+function getTopQueryGroupContribution(report, limit = 3) {
+  const rankedGroups = Array.isArray(report?.ranked_groups) && report.ranked_groups.length
+    ? report.ranked_groups
+    : report?.groups;
+  const groups = Array.isArray(rankedGroups) ? rankedGroups : [];
+  return groups
+    .filter((group) => isVisibleQueryGroup(group) && toReportNumber(group.final_candidates) > 0)
+    .sort((left, right) => toReportNumber(right.final_candidates) - toReportNumber(left.final_candidates))
+    .slice(0, limit);
+}
+
+function renderSearchExplanationPills(items, emptyText, renderItem) {
+  if (!items.length) {
+    return `<p class="search-explanation-empty">${escapeHtml(emptyText)}</p>`;
+  }
+  return `
+    <div class="search-explanation-pills">
+      ${items.map(renderItem).join("")}
+    </div>
+  `;
+}
+
+function buildLocationExplanation(run, report) {
+  const search = run?.search || {};
+  const totals = report?.totals || {};
+  const policy = report?.location_policy || search.location_policy || run?.search_strategy?.location_policy || "balanced";
+  const locations = Array.isArray(search.locations) ? search.locations.filter(Boolean) : [];
+  const rejected = toReportNumber(totals.strict_location_rejected);
+
+  if (policy === "strict" && locations.length) {
+    if (rejected > 0) {
+      return `Strict location was on: ${rejected.toLocaleString()} off-location rows were removed before dedupe.`;
+    }
+    return "Strict location was on; only candidates with target-location evidence were kept.";
+  }
+  if (locations.length) {
+    return "Location was used in the query, but strict filtering was not active for this run.";
+  }
+  return "No location constraint was selected for this run.";
+}
+
+function buildAdaptiveExplanation(run, report) {
+  const strategy = run?.search_strategy || {};
+  const adaptive = strategy.adaptive_waves || {};
+  const totals = report?.totals || {};
+  const completed = toReportNumber(adaptive.completed_wave_count);
+  const planned = toReportNumber(adaptive.planned_wave_count);
+  const requested = toReportNumber(totals.requested_candidates || run?.search?.results_limit);
+  const finalCount = toReportNumber(totals.final_candidates || run?.candidates?.length);
+  const selection = adaptive.dynamic_selection || {};
+
+  if (!adaptive.enabled || !planned) {
+    return "Adaptive waves were not needed for this search size.";
+  }
+  if (completed <= 1 && requested && finalCount >= requested) {
+    return `Wave 1 filled the requested ${requested.toLocaleString()} candidates, so later waves were skipped.`;
+  }
+  if (selection.action && selection.action !== "not_applied") {
+    return "Later waves were reordered using the providers and query groups that worked best early.";
+  }
+  if (completed > 1) {
+    return `${completed.toLocaleString()} of ${planned.toLocaleString()} adaptive waves ran to expand recall.`;
+  }
+  return "The search started with the focused query groups and did not need broader waves yet.";
+}
+
+function renderSearchExplanation(run, providerReport, queryGroupReport) {
+  const search = run?.search || {};
+  const strategy = run?.search_strategy || {};
+  const totals = providerReport?.totals || {};
+  const role = search.role || strategy.primary_role || "Selected role";
+  const family = strategy.role_pattern_family || "Custom role";
+  const sourceText = formatSearchExplanationList(
+    Array.isArray(search.sources) ? search.sources.map(formatSearchSourceLabel) : [],
+    "selected public sources",
+  );
+  const locationText = formatSearchExplanationList(search.locations, "any location");
+  const depthKey = search.search_depth || strategy.search_depth || "extended";
+  const depthLabel = getSearchDepthConfig(depthKey).label || formatTitleCaseValue(depthKey);
+  const requested = toReportNumber(totals.requested_candidates || search.results_limit);
+  const finalCount = toReportNumber(totals.final_candidates || run?.candidates?.length);
+  const plannedCalls = toReportNumber(totals.planned_calls || strategy.planned_query_count || strategy.query_count);
+  const executedCalls = toReportNumber(totals.executed_calls || strategy.executed_query_count || run?.queries?.length);
+  const topProviders = getTopProviderContribution(providerReport);
+  const topGroups = getTopQueryGroupContribution(queryGroupReport);
+  const resultText = requested
+    ? `${finalCount.toLocaleString()} / ${requested.toLocaleString()} candidates`
+    : `${finalCount.toLocaleString()} candidates`;
+  const callText = plannedCalls
+    ? `${executedCalls.toLocaleString()} of ${plannedCalls.toLocaleString()} planned provider calls ran`
+    : `${executedCalls.toLocaleString()} provider calls ran`;
+
+  return `
+    <section class="search-explanation-card">
+      <div class="search-explanation-hero">
+        <div>
+          <span class="section-kicker">Search explanation</span>
+          <strong>${escapeHtml(role)}</strong>
+          <p>
+            Searched ${escapeHtml(sourceText)} for ${escapeHtml(family)} candidates in
+            ${escapeHtml(locationText)} using ${escapeHtml(depthLabel)} depth.
+          </p>
+        </div>
+        <span class="search-explanation-score">${escapeHtml(resultText)}</span>
+      </div>
+      <div class="search-explanation-grid">
+        <div class="search-explanation-block">
+          <span>What actually happened</span>
+          <p>${escapeHtml(callText)} in ${escapeHtml(formatBenchmarkDuration(run?.duration_seconds))}.</p>
+          <p>${escapeHtml(buildLocationExplanation(run, providerReport))}</p>
+        </div>
+        <div class="search-explanation-block">
+          <span>Providers that delivered</span>
+          ${renderSearchExplanationPills(
+            topProviders,
+            "No provider produced final unique candidates yet.",
+            (provider) => `
+              <span class="search-explanation-pill">
+                ${escapeHtml(formatProviderLabel(provider.provider))}
+                <strong>${escapeHtml(toReportNumber(provider.final_candidates).toLocaleString())}</strong>
+              </span>
+            `,
+          )}
+        </div>
+        <div class="search-explanation-block">
+          <span>Query groups that worked</span>
+          ${renderSearchExplanationPills(
+            topGroups,
+            "No query group produced final unique candidates yet.",
+            (group) => `
+              <span class="search-explanation-pill">
+                ${escapeHtml(group.query_group_label || group.skill_input || group.query_group_id)}
+                <strong>${escapeHtml(toReportNumber(group.final_candidates).toLocaleString())}</strong>
+              </span>
+            `,
+          )}
+        </div>
+      </div>
+      <p class="search-explanation-note">${escapeHtml(buildAdaptiveExplanation(run, providerReport))}</p>
+    </section>
+  `;
+}
+
 function formatBenchmarkDuration(seconds) {
   const value = Number(seconds) || 0;
   if (value < 60) return `${Math.round(value)}s`;
@@ -1630,7 +1800,12 @@ function renderSearchDiagnostics(run) {
   const queryGroupReport = getQueryGroupContributionReport(run);
   container.classList.remove("hidden");
   container.innerHTML = `
-    <div class="provider-report-card">
+    ${renderSearchExplanation(run, report, queryGroupReport)}
+    <details class="provider-report-card technical-report-card">
+      <summary class="technical-report-summary">
+        <span>Technical reports</span>
+        <small>Provider lift, query-group lift, adaptive waves, and benchmark CSV exports.</small>
+      </summary>
       <div class="provider-report-header">
         <div>
           <strong>Provider Contribution Report</strong>
@@ -1686,7 +1861,7 @@ function renderSearchDiagnostics(run) {
           <p class="provider-report-note">Loading recent run comparison...</p>
         </div>
       </details>
-    </div>
+    </details>
   `;
   container.querySelector("[data-provider-report-export]")?.addEventListener("click", () => {
     downloadProviderReportCsv(report, run);

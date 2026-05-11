@@ -199,6 +199,8 @@ Current implementation:
 - `.env.example` documents `SERPAPI_API_KEY`, `SERPER_API_KEY`, `TAVILY_API_KEY`, location verification settings, and OpenAI settings.
 - Provider diagnostics are stored in `search_strategy.result_diagnostics` for analysis, including raw rows, quality rows, accepted rows, strict-location rejects, verification attempts, and provider breakdowns.
 - Detailed diagnostics are hidden from the main results UI by default so the recruiter sees a cleaner candidate table, while the run JSON remains auditable.
+- Added recruiter-friendly Search Explanation UX after each run. It summarizes what was searched, candidate fill, elapsed time, executed vs planned provider calls, strict-location filtering, top contributing providers, top query groups, and adaptive-wave behavior.
+- Technical provider/query-group/adaptive/benchmark reports remain available, but are collapsed behind `Technical reports` so the main UI reads like a sourcing summary rather than a debug dashboard.
 - A compact Provider Contribution Report is now shown after each search and can be exported to CSV. It summarizes raw rows, strict-location rejects, accepted rows, final unique candidates, dedupe/cap loss, executed calls, and warnings per provider.
 - Adaptive wave diagnostics are stored in `search_strategy.adaptive_waves` and shown inside the contribution report, including which waves ran, calls per wave, raw rows, accepted rows, and unique candidates after each wave.
 - Dynamic wave selection is stored in `search_strategy.adaptive_waves.dynamic_selection` and shown in the adaptive-wave report. The first slice reranks remaining Wave 2/3 calls using Wave 1 productive/weak query groups and provider lift.
@@ -218,6 +220,8 @@ Remaining work:
 
 - Improve source-specific search behavior per source.
 - Benchmark provider quality across Standard, Medium, Extended, and Max search depths.
+- Add a short "why not filled" explanation when final candidates are below the requested limit, for example Standard depth only used Tavily, strict location removed many rows, or too few query groups produced unique lift.
+- Add next-action suggestions in the Search Explanation card, for example try Extended/Max depth, broaden role signals, or add another location only when the diagnostics support that advice.
 - Use the new query-group contribution report in real benchmark runs and tune group ordering/selection.
 - Benchmark adaptive waves on 100/200-candidate searches and tune the wave split if real runs show too little unique lift.
 - Add a second adaptive-wave layer that can skip weak groups or replace them with alternates from the same semantic family.

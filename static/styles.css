@@ -652,6 +652,114 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .search-diagnostics.hidden {
   display: none;
 }
+.search-explanation-card {
+  border: 1px solid rgba(61, 217, 196, 0.24);
+  border-radius: 20px;
+  padding: 16px;
+  margin-bottom: 12px;
+  background:
+    radial-gradient(circle at top left, rgba(61, 217, 196, 0.16), transparent 36%),
+    linear-gradient(135deg, rgba(20, 52, 82, 0.82), rgba(12, 22, 40, 0.78));
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
+}
+.search-explanation-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.section-kicker {
+  display: inline-flex;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.search-explanation-hero strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.12;
+}
+.search-explanation-hero p {
+  max-width: 840px;
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.search-explanation-score {
+  flex: 0 0 auto;
+  border: 1px solid rgba(61, 217, 196, 0.2);
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(61, 217, 196, 0.12);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.search-explanation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.search-explanation-block {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(11, 17, 32, 0.38);
+}
+.search-explanation-block > span {
+  display: block;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+.search-explanation-block p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.search-explanation-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+.search-explanation-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  border: 1px solid rgba(61, 217, 196, 0.14);
+  border-radius: 999px;
+  padding: 6px 8px;
+  background: rgba(61, 217, 196, 0.08);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+.search-explanation-pill strong {
+  color: var(--accent);
+  font-size: 11px;
+}
+.search-explanation-empty,
+.search-explanation-note {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.search-explanation-note {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 12px;
+}
 .provider-report-card {
   border: 1px solid rgba(61, 217, 196, 0.2);
   border-radius: 18px;
@@ -659,6 +767,48 @@ h1, h2, h3, h4, p { margin-top: 0; }
   background:
     linear-gradient(135deg, rgba(61, 217, 196, 0.1), rgba(74, 141, 255, 0.06)),
     rgba(12, 22, 40, 0.68);
+}
+.technical-report-card {
+  margin-top: 12px;
+}
+.technical-report-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.technical-report-summary::-webkit-details-marker {
+  display: none;
+}
+.technical-report-summary span {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 900;
+}
+.technical-report-summary small {
+  flex: 1 1 auto;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.technical-report-summary::after {
+  content: "Expand";
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: rgba(11, 17, 32, 0.4);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 900;
+}
+.technical-report-card[open] .technical-report-summary {
+  margin-bottom: 12px;
+}
+.technical-report-card[open] .technical-report-summary::after {
+  content: "Collapse";
 }
 .provider-report-header {
   display: flex;
@@ -891,6 +1041,19 @@ h1, h2, h3, h4, p { margin-top: 0; }
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
+}
+
+@media (max-width: 900px) {
+  .search-explanation-hero {
+    flex-direction: column;
+  }
+  .search-explanation-grid {
+    grid-template-columns: 1fr;
+  }
+  .technical-report-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .results-table {

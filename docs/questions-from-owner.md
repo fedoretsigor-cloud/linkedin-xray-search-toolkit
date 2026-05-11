@@ -277,6 +277,9 @@ Implementation note:
 - Query Group Contribution Report now hides unexecuted zero-row groups from the UI/CSV so reports do not show placeholder rows such as `group-10`.
 - Benchmark Summary now compares recent runs in the UI and CSV by duration, executed/planned calls, provider lift, and top query groups.
 - Benchmark Summary filters were added for all runs, same role family, same location, and Max 200 runs; CSV export follows the selected filter.
+- Search Explanation UX now shows a short recruiter-facing summary after each run: what was searched, how many candidates were filled, how long it took, how strict location behaved, which providers delivered unique candidates, and which query groups worked.
+- The detailed Provider Contribution Report, Query Group Report, Adaptive Waves, and Benchmark Summary are still available, but are collapsed under `Technical reports` by default.
+- Next UX improvement: if a run returns fewer candidates than requested, explain the likely reason in plain language and suggest the next search action only when diagnostics support it.
 
 Planned next adaptive layer:
 
