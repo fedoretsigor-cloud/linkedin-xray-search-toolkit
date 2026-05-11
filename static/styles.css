@@ -903,6 +903,41 @@ h1, h2, h3, h4, p { margin-top: 0; }
   color: var(--accent);
   font-size: 11px;
 }
+.adaptive-replacement-audit {
+  margin-top: 10px;
+  border-top: 1px solid rgba(61, 217, 196, 0.16);
+  padding-top: 10px;
+}
+.adaptive-replacement-audit strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.adaptive-replacement-audit ul {
+  padding-left: 0;
+  list-style: none;
+}
+.adaptive-replacement-audit li {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto minmax(120px, 1fr);
+  gap: 6px;
+  align-items: center;
+}
+.adaptive-replacement-audit small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.adaptive-replacement-audit .replacement-from {
+  color: var(--muted);
+}
+.adaptive-replacement-audit .replacement-arrow {
+  color: var(--accent);
+}
+.adaptive-replacement-audit .replacement-to {
+  color: var(--text);
+  font-weight: 800;
+}
 .benchmark-summary-header {
   display: flex;
   align-items: center;

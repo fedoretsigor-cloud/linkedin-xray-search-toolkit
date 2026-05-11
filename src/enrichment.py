@@ -34,9 +34,10 @@ def build_candidate_analysis(candidate, search, scoring):
             f"{extract_location_hint(candidate)}"
         )
     else:
+        role = clean_text(candidate.get("display_role") or candidate.get("role") or "profile result")
         summary = (
             f"{clean_text(candidate.get('profile_name', 'Unknown'))}, "
-            f"{clean_text(candidate.get('role', 'profile result'))}, "
+            f"{role}, "
             f"{extract_location_hint(candidate)}"
         )
     return {

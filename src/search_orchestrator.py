@@ -37,6 +37,21 @@ ADAPTIVE_WAVE_LABELS = {
     2: "Alternate groups",
     3: "Broad discovery",
 }
+QUERY_WAVE_TYPE_LABELS = {
+    "evidence_core": "Evidence Core",
+    "title_focus": "Title Focus",
+    "evidence_expansion": "Evidence Expansion",
+    "mixed": "Mixed",
+}
+QUERY_WAVE_TYPE_ORDER = ("evidence_core", "title_focus", "evidence_expansion")
+DEFAULT_QUERY_WAVE_TYPE = "title_focus"
+MAX_SEARCH_CALL_CAPS = (
+    (200, 480),
+    (100, 320),
+    (50, 160),
+    (0, 80),
+)
+MAX_EXPANSION_MIN_CALLS = 20
 ADAPTIVE_SELECTION_STOPWORDS = {
     "and",
     "api",
@@ -53,6 +68,8 @@ ADAPTIVE_SELECTION_STOPWORDS = {
     "the",
     "with",
 }
+ADAPTIVE_REPLACEMENT_MAX_GROUPS = 2
+ADAPTIVE_REPLACEMENT_STRONG_SIMILARITY_CEILING = 0.4
 CREDIT_ERROR_MARKERS = (
     "credit",
     "credits",
@@ -69,6 +86,71 @@ CREDIT_ERROR_MARKERS = (
 )
 RATE_LIMIT_MARKERS = ("rate limit", "too many requests", "throttle")
 AUTH_ERROR_MARKERS = ("invalid api key", "unauthorized", "forbidden", "missing api key")
+
+
+def positive_int(value, default=0):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def search_stop_reason_label(stop_reason):
+    labels = {
+        "target_reached": "Target reached",
+        "call_cap_reached": "Call cap reached",
+        "plan_exhausted": "Plan exhausted",
+    }
+    return labels.get(stop_reason, stop_reason or "Plan exhausted")
+
+
+def first_query_index_for_wave_type(query_plan, wave_type):
+    normalized_wave_type = normalize_query_wave_type(wave_type)
+    for index, query_info in enumerate(query_plan or [], start=1):
+        if normalize_query_wave_type(query_info.get("wave_type")) == normalized_wave_type:
+            return index
+    return 0
+
+
+def default_max_search_call_cap(requested_count, query_plan):
+    planned_count = len(query_plan or [])
+    if not planned_count:
+        return 0
+
+    requested = positive_int(requested_count, 20)
+    cap = planned_count
+    for threshold, threshold_cap in MAX_SEARCH_CALL_CAPS:
+        if requested >= threshold:
+            cap = threshold_cap
+            break
+
+    expansion_start = first_query_index_for_wave_type(query_plan, "evidence_expansion")
+    if expansion_start:
+        expansion_budget = max(MAX_EXPANSION_MIN_CALLS, min(60, ceil(requested / 10)))
+        cap = max(cap, expansion_start + expansion_budget - 1)
+    return min(cap, planned_count)
+
+
+def resolve_search_call_cap(search_input, config, query_plan, requested_count):
+    planned_count = len(query_plan or [])
+    if not planned_count:
+        return 0
+
+    search_depth = str(search_input.get("search_depth") or "extended").strip().lower()
+    explicit_cap = positive_int(search_input.get("executed_call_cap"))
+    if not explicit_cap and search_depth == "max":
+        explicit_cap = positive_int(config.get("max_executed_call_cap"))
+    if explicit_cap:
+        return min(explicit_cap, planned_count)
+
+    if search_depth == "max":
+        return default_max_search_call_cap(requested_count, query_plan)
+    return planned_count
+
+
+def executed_search_call_count(executed_queries):
+    return sum(1 for item in executed_queries or [] if item.get("query_type") != "location_verification")
 
 
 def parse_provider_list(value):
@@ -214,15 +296,66 @@ def build_query_group_label(query_info, index):
     return f"{label} ({context})" if context else label
 
 
-def annotate_query_groups(base_queries):
+def normalize_query_wave_type(value, *, source=""):
+    wave_type = clean_text(value).lower().replace("-", "_").replace(" ", "_")
+    if wave_type in QUERY_WAVE_TYPE_LABELS:
+        return wave_type
+    if source == "adaptive_alternate":
+        return "evidence_expansion"
+    return DEFAULT_QUERY_WAVE_TYPE
+
+
+def query_wave_type_label(wave_type):
+    return QUERY_WAVE_TYPE_LABELS.get(normalize_query_wave_type(wave_type), QUERY_WAVE_TYPE_LABELS[DEFAULT_QUERY_WAVE_TYPE])
+
+
+def annotate_query_groups(base_queries, *, start_index=1, id_prefix="group", source="planned", wave_type=None):
     annotated = []
-    for index, query_info in enumerate(base_queries or [], start=1):
+    for index, query_info in enumerate(base_queries or [], start=start_index):
         group_info = dict(query_info)
-        group_info["query_group_id"] = group_info.get("query_group_id") or f"group-{index}"
+        normalized_wave_type = normalize_query_wave_type(
+            group_info.get("wave_type") or wave_type,
+            source=source,
+        )
+        group_info["query_group_id"] = group_info.get("query_group_id") or f"{id_prefix}-{index}"
         group_info["query_group_index"] = int(group_info.get("query_group_index") or index)
         group_info["query_group_label"] = group_info.get("query_group_label") or build_query_group_label(group_info, index)
+        group_info["query_group_source"] = group_info.get("query_group_source") or source
+        group_info["wave_type"] = normalized_wave_type
+        group_info["wave_type_label"] = query_wave_type_label(normalized_wave_type)
         annotated.append(group_info)
     return annotated
+
+
+def build_adaptive_alternate_base_queries(search_input, build_queries, start_index):
+    alternate_skill_groups = search_input.get("alternate_skill_groups") or []
+    role_pattern = search_input.get("role_pattern") or {}
+    has_grouped_anchor_alternates = (
+        role_pattern.get("query_strategy") == "grouped_anchors"
+        and bool(role_pattern.get("grouped_anchor_alternates"))
+    )
+    if not alternate_skill_groups and not has_grouped_anchor_alternates:
+        return []
+
+    alternate_input = dict(search_input)
+    if has_grouped_anchor_alternates:
+        alternate_input["grouped_anchor_alternates_only"] = True
+    else:
+        alternate_input["skill_groups"] = alternate_skill_groups
+        if alternate_input.get("query_wave_types"):
+            alternate_input["query_wave_types"] = ["evidence_expansion"]
+    alternate_input["alternate_skill_groups"] = []
+    try:
+        alternate_queries = build_queries(alternate_input)
+    except RuntimeError:
+        return []
+    return annotate_query_groups(
+        alternate_queries,
+        start_index=start_index,
+        id_prefix="alt-group",
+        source="adaptive_alternate",
+        wave_type="evidence_expansion",
+    )
 
 
 def page_cap_for_provider(provider, search_input, requested_count, page_size):
@@ -256,17 +389,85 @@ def adaptive_wave_count(requested_count, base_query_count):
     return min(2, base_query_count)
 
 
+def dominant_query_wave_type(queries):
+    counts = {}
+    for query_info in queries or []:
+        wave_type = normalize_query_wave_type(query_info.get("wave_type"))
+        counts[wave_type] = counts.get(wave_type, 0) + 1
+    if not counts:
+        return DEFAULT_QUERY_WAVE_TYPE
+    ranked = sorted(counts.items(), key=lambda item: item[1], reverse=True)
+    if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
+        return "mixed"
+    return ranked[0][0]
+
+
+def build_adaptive_wave(*, wave_number, label, activation, queries):
+    wave_type = dominant_query_wave_type(queries)
+    return {
+        "wave": wave_number,
+        "label": label,
+        "wave_type": wave_type,
+        "wave_type_label": query_wave_type_label(wave_type),
+        "activation": activation,
+        "queries": queries,
+    }
+
+
+def explicit_query_wave_type_order(queries):
+    if not any(query_info.get("wave_plan_enabled") for query_info in queries or []):
+        return []
+
+    seen = set()
+    for query_info in queries or []:
+        wave_type = normalize_query_wave_type(query_info.get("wave_type"))
+        if wave_type:
+            seen.add(wave_type)
+    ordered = [wave_type for wave_type in QUERY_WAVE_TYPE_ORDER if wave_type in seen]
+    ordered.extend(sorted(seen - set(ordered)))
+    return ordered
+
+
+def split_queries_by_explicit_wave_type(queries):
+    wave_types = explicit_query_wave_type_order(queries)
+    if not wave_types:
+        return []
+
+    waves = []
+    for index, wave_type in enumerate(wave_types, start=1):
+        wave_queries = [
+            query_info
+            for query_info in queries
+            if normalize_query_wave_type(query_info.get("wave_type")) == wave_type
+        ]
+        if not wave_queries:
+            continue
+        waves.append(
+            build_adaptive_wave(
+                wave_number=index,
+                label=query_wave_type_label(wave_type),
+                activation="initial" if index == 1 else "target_not_reached",
+                queries=wave_queries,
+            )
+        )
+    return waves
+
+
 def split_queries_into_adaptive_waves(base_queries, requested_count):
     queries = list(base_queries or [])
+    explicit_waves = split_queries_by_explicit_wave_type(queries)
+    if explicit_waves:
+        return explicit_waves
+
     wave_count = adaptive_wave_count(requested_count, len(queries))
     if wave_count <= 1:
         return [
-            {
-                "wave": 1,
-                "label": ADAPTIVE_WAVE_LABELS[1],
-                "activation": "initial",
-                "queries": queries,
-            }
+            build_adaptive_wave(
+                wave_number=1,
+                label=ADAPTIVE_WAVE_LABELS[1],
+                activation="initial",
+                queries=queries,
+            )
         ]
 
     chunk_size = max(ceil(len(queries) / wave_count), 1)
@@ -277,27 +478,32 @@ def split_queries_into_adaptive_waves(base_queries, requested_count):
             continue
         wave_number = index + 1
         waves.append(
-            {
-                "wave": wave_number,
-                "label": ADAPTIVE_WAVE_LABELS.get(wave_number, f"Wave {wave_number}"),
-                "activation": "initial" if wave_number == 1 else "target_not_reached",
-                "queries": chunk,
-            }
+            build_adaptive_wave(
+                wave_number=wave_number,
+                label=ADAPTIVE_WAVE_LABELS.get(wave_number, f"Wave {wave_number}"),
+                activation="initial" if wave_number == 1 else "target_not_reached",
+                queries=chunk,
+            )
         )
     return waves or [
-        {
-            "wave": 1,
-            "label": ADAPTIVE_WAVE_LABELS[1],
-            "activation": "initial",
-            "queries": queries,
-        }
+        build_adaptive_wave(
+            wave_number=1,
+            label=ADAPTIVE_WAVE_LABELS[1],
+            activation="initial",
+            queries=queries,
+        )
     ]
 
 
 def add_wave_context(query_info, wave):
     wave_info = dict(query_info)
+    wave_type = normalize_query_wave_type(wave_info.get("wave_type") or wave.get("wave_type"))
     wave_info["adaptive_wave"] = wave["wave"]
     wave_info["adaptive_wave_label"] = wave["label"]
+    wave_info["adaptive_wave_type"] = wave_type
+    wave_info["adaptive_wave_type_label"] = query_wave_type_label(wave_type)
+    wave_info["wave_type"] = wave_type
+    wave_info["wave_type_label"] = query_wave_type_label(wave_type)
     wave_info["adaptive_wave_activation"] = wave["activation"]
     return wave_info
 
@@ -336,6 +542,8 @@ def build_adaptive_wave_summaries(query_waves, query_plan):
             {
                 "wave": wave["wave"],
                 "label": wave["label"],
+                "wave_type": wave.get("wave_type") or DEFAULT_QUERY_WAVE_TYPE,
+                "wave_type_label": wave.get("wave_type_label") or query_wave_type_label(wave.get("wave_type")),
                 "activation": wave["activation"],
                 "base_query_count": len(wave["queries"]),
                 "planned_calls": planned_calls.get(wave["wave"], 0),
@@ -351,12 +559,14 @@ def build_adaptive_wave_summaries(query_waves, query_plan):
     return summaries
 
 
-def finalize_adaptive_wave_summaries(wave_summaries, final_unique_count, requested_count):
+def finalize_adaptive_wave_summaries(wave_summaries, final_unique_count, requested_count, stop_reason=None):
     for summary in wave_summaries:
         if not summary["executed_calls"]:
             summary["status"] = "not_needed"
             continue
-        if final_unique_count >= requested_count and summary["executed_calls"] < summary["planned_calls"]:
+        if stop_reason == "call_cap_reached" and summary["executed_calls"] < summary["planned_calls"]:
+            summary["status"] = "stopped_at_call_cap"
+        elif final_unique_count >= requested_count and summary["executed_calls"] < summary["planned_calls"]:
             summary["status"] = "stopped_at_target"
         else:
             summary["status"] = "completed"
@@ -365,6 +575,55 @@ def finalize_adaptive_wave_summaries(wave_summaries, final_unique_count, request
         if summary["started_unique_candidates"] is None:
             summary["started_unique_candidates"] = 0
     return wave_summaries
+
+
+def summarize_evidence_expansion(wave_summaries, stop_reason):
+    expansion_waves = [
+        summary
+        for summary in wave_summaries or []
+        if normalize_query_wave_type(summary.get("wave_type")) == "evidence_expansion"
+    ]
+    if not expansion_waves:
+        return {
+            "planned": False,
+            "ran": False,
+            "status": "not_planned",
+            "label": "Not planned",
+            "reason": "Evidence Expansion is not part of this search depth.",
+        }
+
+    planned_calls = sum(int(summary.get("planned_calls", 0) or 0) for summary in expansion_waves)
+    executed_calls = sum(int(summary.get("executed_calls", 0) or 0) for summary in expansion_waves)
+    if executed_calls:
+        status = "ran_partial" if executed_calls < planned_calls else "ran"
+        return {
+            "planned": True,
+            "ran": True,
+            "status": status,
+            "label": "Ran partially" if status == "ran_partial" else "Ran",
+            "planned_calls": planned_calls,
+            "executed_calls": executed_calls,
+            "reason": "Evidence Expansion ran because earlier waves did not fill the target before the run stopped.",
+        }
+
+    status_by_stop_reason = {
+        "target_reached": ("skipped_target_reached", "Skipped: target reached", "Earlier waves filled the requested candidate target."),
+        "call_cap_reached": ("skipped_call_cap", "Skipped: call cap reached", "The Max call cap was reached before Evidence Expansion."),
+        "plan_exhausted": ("skipped_plan_exhausted", "Skipped: plan exhausted", "The run ended before Evidence Expansion had executable calls."),
+    }
+    status, label, reason = status_by_stop_reason.get(
+        stop_reason,
+        ("not_needed", "Not needed", "The run did not need Evidence Expansion."),
+    )
+    return {
+        "planned": True,
+        "ran": False,
+        "status": status,
+        "label": label,
+        "planned_calls": planned_calls,
+        "executed_calls": executed_calls,
+        "reason": reason,
+    }
 
 
 def tokenize_query_group(query_info):
@@ -398,14 +657,146 @@ def provider_lift_from_rows(rows):
     return count_items_by_provider(dedupe_rows(rows or []), provider_key="search_provider")
 
 
-def dynamic_query_group_score(query_info, strong_groups, weak_groups, provider_lift):
+def dynamic_query_group_signal(query_info, strong_groups, weak_groups, provider_lift):
     strong_similarity = max([query_group_similarity(query_info, group) for group in strong_groups] or [0.0])
     weak_similarity = max([query_group_similarity(query_info, group) for group in weak_groups] or [0.0])
     provider_score = provider_lift.get(query_info.get("provider") or "", 0)
-    return (strong_similarity * 10.0) - (weak_similarity * 4.0) + min(provider_score, 20) / 20.0
+    score = (strong_similarity * 10.0) - (weak_similarity * 4.0) + min(provider_score, 20) / 20.0
+    return {
+        "score": score,
+        "strong_similarity": strong_similarity,
+        "weak_similarity": weak_similarity,
+        "provider_score": provider_score,
+    }
 
 
-def build_dynamic_wave_selection(query_plan, start_index, diagnostics, all_rows):
+def dynamic_query_group_score(query_info, strong_groups, weak_groups, provider_lift):
+    return dynamic_query_group_signal(query_info, strong_groups, weak_groups, provider_lift)["score"]
+
+
+def query_group_identity(query_info):
+    return "|".join(
+        clean_text(value).lower()
+        for value in [
+            query_info.get("skill_input") or query_info.get("query_group_label") or "",
+            query_info.get("location_input", ""),
+            query_info.get("source_site", ""),
+        ]
+    )
+
+
+def representative_query_groups(query_plan):
+    groups = {}
+    for query_info in query_plan or []:
+        if query_info.get("query_type") == "location_verification":
+            continue
+        group_id = query_info.get("query_group_id") or "unknown"
+        if group_id not in groups:
+            groups[group_id] = query_info
+    return groups
+
+
+def available_alternate_groups(query_plan, alternate_base_queries):
+    existing_keys = {
+        query_group_identity(query_info)
+        for query_info in query_plan or []
+        if query_group_identity(query_info)
+    }
+    alternates = []
+    seen = set()
+    for query_info in alternate_base_queries or []:
+        key = query_group_identity(query_info)
+        if not key or key in existing_keys or key in seen:
+            continue
+        seen.add(key)
+        alternates.append(query_info)
+    return alternates
+
+
+def search_scope_matches(left, right):
+    return (
+        clean_text(left.get("location_input", "")).lower() == clean_text(right.get("location_input", "")).lower()
+        and clean_text(left.get("source_site", "")).lower() == clean_text(right.get("source_site", "")).lower()
+    )
+
+
+def select_replacement_alternate(candidate_query_info, alternates, used_alternate_ids):
+    for alternate in alternates:
+        alternate_id = alternate.get("query_group_id")
+        if alternate_id in used_alternate_ids:
+            continue
+        if search_scope_matches(candidate_query_info, alternate):
+            used_alternate_ids.add(alternate_id)
+            return alternate
+    for alternate in alternates:
+        alternate_id = alternate.get("query_group_id")
+        if alternate_id not in used_alternate_ids:
+            used_alternate_ids.add(alternate_id)
+            return alternate
+    return None
+
+
+def build_replacement_groups(query_plan, start_index, strong_groups, weak_groups, provider_lift, alternate_base_queries):
+    if not weak_groups:
+        return []
+
+    alternates = available_alternate_groups(query_plan, alternate_base_queries)
+    if not alternates:
+        return []
+
+    candidates = []
+    for group_id, query_info in representative_query_groups(query_plan[start_index:]).items():
+        if query_info.get("query_group_source") == "adaptive_alternate":
+            continue
+        signal = dynamic_query_group_signal(query_info, strong_groups, weak_groups, provider_lift)
+        if signal["strong_similarity"] >= ADAPTIVE_REPLACEMENT_STRONG_SIMILARITY_CEILING:
+            continue
+        candidates.append(
+            {
+                "query_group_id": group_id,
+                "query_group_label": query_info.get("query_group_label") or group_id,
+                "adaptive_wave": int(query_info.get("adaptive_wave", 1) or 1),
+                "wave_type": query_info.get("wave_type") or DEFAULT_QUERY_WAVE_TYPE,
+                "wave_type_label": query_info.get("wave_type_label") or query_wave_type_label(query_info.get("wave_type")),
+                "query_group_index": int(query_info.get("query_group_index", 0) or 0),
+                "score": signal["score"],
+                "strong_similarity": signal["strong_similarity"],
+                "weak_similarity": signal["weak_similarity"],
+                "query_info": query_info,
+            }
+        )
+
+    candidates.sort(key=lambda item: (item["score"], -item["adaptive_wave"], item["query_group_index"]))
+    replacement_count = min(len(candidates), len(alternates), len(weak_groups), ADAPTIVE_REPLACEMENT_MAX_GROUPS)
+    replacements = []
+    used_alternate_ids = set()
+    for candidate in candidates:
+        if len(replacements) >= replacement_count:
+            break
+        alternate = select_replacement_alternate(candidate["query_info"], alternates, used_alternate_ids)
+        if not alternate:
+            continue
+        replacements.append(
+            {
+                "replaced_query_group_id": candidate["query_group_id"],
+                "replaced_query_group_label": candidate["query_group_label"],
+                "replacement_query_group_id": alternate.get("query_group_id") or "",
+                "replacement_query_group_label": alternate.get("query_group_label") or alternate.get("skill_input", ""),
+                "adaptive_wave": candidate["adaptive_wave"],
+                "replaced_wave_type": candidate.get("wave_type", ""),
+                "replaced_wave_type_label": candidate.get("wave_type_label", ""),
+                "replacement_wave_type": alternate.get("wave_type", ""),
+                "replacement_wave_type_label": alternate.get("wave_type_label", ""),
+                "score": round(candidate["score"], 4),
+                "strong_similarity": round(candidate["strong_similarity"], 4),
+                "weak_similarity": round(candidate["weak_similarity"], 4),
+                "reason": "Completed waves found weak groups; this later group ranked low, so an unused semantic-family alternate is tried instead.",
+            }
+        )
+    return replacements
+
+
+def build_dynamic_wave_selection(query_plan, start_index, diagnostics, all_rows, alternate_base_queries=None, current_wave=2):
     remaining_plan = query_plan[start_index:]
     if not remaining_plan:
         return None
@@ -425,6 +816,7 @@ def build_dynamic_wave_selection(query_plan, start_index, diagnostics, all_rows)
     group_summaries = []
     for group_id, query_info in seen_groups.items():
         stats = by_query_group.get(group_id, {})
+        has_group_stats = group_id in by_query_group
         final_count = int(final_by_group.get(group_id, 0) or 0)
         accepted_count = int(stats.get("accepted_rows", 0) or 0)
         summary = {
@@ -436,12 +828,20 @@ def build_dynamic_wave_selection(query_plan, start_index, diagnostics, all_rows)
         group_summaries.append(summary)
         if final_count > 0:
             strong_groups.append(query_info)
-        elif accepted_count == 0:
+        elif has_group_stats and accepted_count == 0:
             weak_groups.append(query_info)
 
     if not strong_groups and not weak_groups:
         return None
 
+    replacement_groups = build_replacement_groups(
+        query_plan,
+        start_index,
+        strong_groups,
+        weak_groups,
+        provider_lift,
+        alternate_base_queries or [],
+    )
     ranked_remaining = []
     for query_info in remaining_plan:
         score = dynamic_query_group_score(query_info, strong_groups, weak_groups, provider_lift)
@@ -450,6 +850,8 @@ def build_dynamic_wave_selection(query_plan, start_index, diagnostics, all_rows)
                 "query_group_id": query_info.get("query_group_id") or "unknown",
                 "query_group_label": query_info.get("query_group_label") or query_info.get("skill_input", ""),
                 "adaptive_wave": int(query_info.get("adaptive_wave", 1) or 1),
+                "wave_type": query_info.get("wave_type") or DEFAULT_QUERY_WAVE_TYPE,
+                "wave_type_label": query_info.get("wave_type_label") or query_wave_type_label(query_info.get("wave_type")),
                 "provider": query_info.get("provider", ""),
                 "page": int(query_info.get("page", 1) or 1),
                 "score": round(score, 4),
@@ -458,17 +860,68 @@ def build_dynamic_wave_selection(query_plan, start_index, diagnostics, all_rows)
 
     ranked_remaining.sort(key=lambda item: (item["adaptive_wave"], -item["score"], item["page"], item["provider"]))
     return {
-        "applied_after_wave": 1,
-        "action": "reordered_remaining_query_plan",
+        "applied_after_wave": max(int(current_wave or 2) - 1, 1),
+        "applied_before_wave": int(current_wave or 2),
+        "action": "reordered_and_replaced_remaining_query_plan" if replacement_groups else "reordered_remaining_query_plan",
+        "replacement_mode": "replace_only",
+        "replacement_group_count": len(replacement_groups),
+        "alternate_group_count": len(available_alternate_groups(query_plan, alternate_base_queries or [])),
         "strong_group_count": len(strong_groups),
         "weak_group_count": len(weak_groups),
         "provider_lift": provider_lift,
         "completed_groups": sorted(group_summaries, key=lambda item: item["final_candidates"], reverse=True),
+        "replacement_groups": replacement_groups,
         "remaining_groups_ranked": ranked_remaining[:20],
     }
 
 
-def apply_dynamic_wave_selection(query_plan, start_index, selection, diagnostics, all_rows):
+def build_replaced_query_info(query_info, alternate_base_query, requested_count):
+    provider = query_info.get("provider", "")
+    page_size = int(query_info.get("page_size", 20) or 20)
+    page_index = max(int(query_info.get("page", 1) or 1) - 1, 0)
+    provider_alternates = expand_queries_for_provider(provider, [alternate_base_query], requested_count)
+    replacement = dict(provider_alternates[0] if provider_alternates else alternate_base_query)
+    replacement = add_pagination_context(replacement, provider, page_index, page_size)
+    wave_type = normalize_query_wave_type(replacement.get("wave_type") or query_info.get("wave_type"))
+    replacement["wave_type"] = wave_type
+    replacement["wave_type_label"] = query_wave_type_label(wave_type)
+    for key in ("adaptive_wave", "adaptive_wave_label", "adaptive_wave_activation"):
+        replacement[key] = query_info.get(key)
+    replacement["adaptive_wave_type"] = wave_type
+    replacement["adaptive_wave_type_label"] = query_wave_type_label(wave_type)
+    replacement["adaptive_replacement"] = True
+    replacement["replaced_query_group_id"] = query_info.get("query_group_id", "")
+    replacement["replaced_query_group_label"] = query_info.get("query_group_label", "")
+    return replacement
+
+
+def apply_dynamic_replacements(remaining_plan, selection, alternate_base_queries, requested_count):
+    replacement_items = selection.get("replacement_groups") or []
+    if not replacement_items:
+        return remaining_plan
+    alternate_by_id = {
+        query_info.get("query_group_id"): query_info
+        for query_info in alternate_base_queries or []
+        if query_info.get("query_group_id")
+    }
+    replacement_map = {
+        item.get("replaced_query_group_id"): alternate_by_id.get(item.get("replacement_query_group_id"))
+        for item in replacement_items
+        if item.get("replaced_query_group_id") and alternate_by_id.get(item.get("replacement_query_group_id"))
+    }
+    if not replacement_map:
+        return remaining_plan
+    replaced = []
+    for query_info in remaining_plan:
+        alternate = replacement_map.get(query_info.get("query_group_id"))
+        if alternate:
+            replaced.append(build_replaced_query_info(query_info, alternate, requested_count))
+        else:
+            replaced.append(query_info)
+    return replaced
+
+
+def apply_dynamic_wave_selection(query_plan, start_index, selection, diagnostics, all_rows, alternate_base_queries=None, requested_count=20):
     if not selection:
         return query_plan
 
@@ -485,7 +938,9 @@ def apply_dynamic_wave_selection(query_plan, start_index, selection, diagnostics
     weak_groups = [
         query_info
         for group_id, query_info in seen_groups.items()
-        if final_by_group.get(group_id, 0) == 0 and int((by_query_group.get(group_id, {}) or {}).get("accepted_rows", 0) or 0) == 0
+        if group_id in by_query_group
+        and final_by_group.get(group_id, 0) == 0
+        and int((by_query_group.get(group_id, {}) or {}).get("accepted_rows", 0) or 0) == 0
     ]
 
     untouched = query_plan[:start_index]
@@ -499,11 +954,53 @@ def apply_dynamic_wave_selection(query_plan, start_index, selection, diagnostics
             int(query_info.get("query_group_index", 0) or 0),
         )
     )
+    remaining = apply_dynamic_replacements(remaining, selection, alternate_base_queries or [], requested_count)
     return untouched + remaining
+
+
+def summarize_dynamic_wave_selections(selection_records):
+    records = [record for record in selection_records or [] if record]
+    if not records:
+        return {
+            "action": "not_applied",
+            "reason": "No later wave reached or no completed wave signal was available.",
+        }
+    if len(records) == 1:
+        return records[0]
+
+    replacement_groups = []
+    for record in records:
+        replacement_groups.extend(record.get("replacement_groups") or [])
+    last_record = records[-1]
+    action = (
+        "reordered_and_replaced_remaining_query_plan"
+        if replacement_groups
+        else "reordered_remaining_query_plan"
+    )
+    return {
+        **last_record,
+        "action": action,
+        "selection_count": len(records),
+        "selection_events": [
+            {
+                "applied_after_wave": record.get("applied_after_wave"),
+                "applied_before_wave": record.get("applied_before_wave"),
+                "action": record.get("action"),
+                "replacement_group_count": record.get("replacement_group_count", 0),
+                "strong_group_count": record.get("strong_group_count", 0),
+                "weak_group_count": record.get("weak_group_count", 0),
+            }
+            for record in records
+        ],
+        "replacement_group_count": len(replacement_groups),
+        "replacement_groups": replacement_groups,
+    }
 
 
 def attach_query_context(rows, query_info):
     for row in rows:
+        row["query_role"] = query_info["title_input"]
+        row["query_technology"] = query_info["skill_input"]
         row["role"] = query_info["title_input"]
         row["technology"] = query_info["skill_input"]
         row["target_location"] = query_info["location_input"]
@@ -515,6 +1012,10 @@ def attach_query_context(rows, query_info):
         row["query_group_label"] = query_info.get("query_group_label", "")
         row["adaptive_wave"] = query_info.get("adaptive_wave", 1)
         row["adaptive_wave_label"] = query_info.get("adaptive_wave_label", "")
+        row["adaptive_wave_type"] = query_info.get("adaptive_wave_type", "")
+        row["adaptive_wave_type_label"] = query_info.get("adaptive_wave_type_label", "")
+        row["query_wave_type"] = query_info.get("wave_type", "")
+        row["query_wave_type_label"] = query_info.get("wave_type_label", "")
     return rows
 
 
@@ -591,6 +1092,8 @@ def query_group_diagnostics(diagnostics, query_info):
             "query_group_label": query_info.get("query_group_label") or group_id,
             "adaptive_wave": int(query_info.get("adaptive_wave", 1) or 1),
             "adaptive_wave_label": query_info.get("adaptive_wave_label", ""),
+            "wave_type": query_info.get("wave_type") or DEFAULT_QUERY_WAVE_TYPE,
+            "wave_type_label": query_info.get("wave_type_label") or query_wave_type_label(query_info.get("wave_type")),
             "title_input": query_info.get("title_input", ""),
             "skill_input": query_info.get("skill_input", ""),
             "location_input": query_info.get("location_input", ""),
@@ -802,6 +1305,8 @@ def build_query_group_contribution_report(
                 "query_group_label": stats.get("query_group_label") or group_id,
                 "adaptive_wave": int(stats.get("adaptive_wave", 1) or 1),
                 "adaptive_wave_label": stats.get("adaptive_wave_label", ""),
+                "wave_type": stats.get("wave_type") or DEFAULT_QUERY_WAVE_TYPE,
+                "wave_type_label": stats.get("wave_type_label") or query_wave_type_label(stats.get("wave_type")),
                 "title_input": stats.get("title_input", ""),
                 "skill_input": stats.get("skill_input", ""),
                 "location_input": stats.get("location_input", ""),
@@ -1058,14 +1563,23 @@ def run_search(
         raise RuntimeError(f"{providers[0]} supports up to 20 results per search")
 
     base_queries = annotate_query_groups(build_queries(search_input))
+    alternate_base_queries = build_adaptive_alternate_base_queries(
+        search_input,
+        build_queries,
+        start_index=len(base_queries) + 1,
+    )
     query_waves = split_queries_into_adaptive_waves(base_queries, requested_count)
     started_at = time.time()
     per_request_limit = min(requested_count, 20)
     query_plan = build_query_plan(providers, query_waves, requested_count, per_request_limit, search_input)
+    planned_query_count = len(query_plan)
+    planned_call_cap = resolve_search_call_cap(search_input, config, query_plan, requested_count)
+    budgeted_query_count = min(planned_query_count, planned_call_cap) if planned_call_cap else planned_query_count
     adaptive_wave_summaries = build_adaptive_wave_summaries(query_waves, query_plan)
     adaptive_wave_map = {item["wave"]: item for item in adaptive_wave_summaries}
     executed_queries = []
     all_rows = []
+    stop_reason = "plan_exhausted"
     location_policy = search_input.get("location_policy") or "strict"
     target_locations = search_input.get("display_locations") or search_input.get("locations", [])
     provider_errors = []
@@ -1073,8 +1587,8 @@ def run_search(
     verification_limit = max(int(config.get("location_verification_limit", 20) or 0), 0)
     diagnostics = build_diagnostics(verification_limit)
     location_metadata = country_metadata_from_target_locations(target_locations)
-    dynamic_wave_selection = None
-    dynamic_wave_selection_applied = False
+    dynamic_wave_selection_records = []
+    dynamic_wave_selection_applied_waves = set()
     verification_state = {
         "attempts": 0,
         "confirmed": 0,
@@ -1087,20 +1601,43 @@ def run_search(
     plan_index = 0
     while plan_index < len(query_plan):
         if len(dedupe_rows(all_rows)) >= requested_count:
+            stop_reason = "target_reached"
+            break
+        if planned_call_cap and executed_search_call_count(executed_queries) >= planned_call_cap:
+            stop_reason = "call_cap_reached"
             break
         query_info = query_plan[plan_index]
+        current_wave = int(query_info.get("adaptive_wave", 1) or 1)
         if (
-            not dynamic_wave_selection_applied
-            and requested_count >= ADAPTIVE_WAVE_MIN_REQUESTED_COUNT
-            and int(query_info.get("adaptive_wave", 1) or 1) > 1
+            requested_count >= ADAPTIVE_WAVE_MIN_REQUESTED_COUNT
+            and current_wave > 1
+            and current_wave not in dynamic_wave_selection_applied_waves
         ):
-            dynamic_wave_selection = build_dynamic_wave_selection(query_plan, plan_index, diagnostics, all_rows)
+            dynamic_wave_selection = build_dynamic_wave_selection(
+                query_plan,
+                plan_index,
+                diagnostics,
+                all_rows,
+                alternate_base_queries=alternate_base_queries,
+                current_wave=current_wave,
+            )
             if dynamic_wave_selection:
-                query_plan = apply_dynamic_wave_selection(query_plan, plan_index, dynamic_wave_selection, diagnostics, all_rows)
+                query_plan = apply_dynamic_wave_selection(
+                    query_plan,
+                    plan_index,
+                    dynamic_wave_selection,
+                    diagnostics,
+                    all_rows,
+                    alternate_base_queries=alternate_base_queries,
+                    requested_count=requested_count,
+                )
                 query_info = query_plan[plan_index]
-            dynamic_wave_selection_applied = True
+                dynamic_wave_selection_records.append(dynamic_wave_selection)
+            dynamic_wave_selection_applied_waves.add(current_wave)
         if progress_callback:
-            progress_callback(plan_index + 1, len(query_plan), query_info, started_at, len(all_rows))
+            progress_total = budgeted_query_count or len(query_plan)
+            progress_current = min(plan_index + 1, progress_total)
+            progress_callback(progress_current, progress_total, query_info, started_at, len(all_rows))
 
         query = query_info["query"]
         provider = query_info["provider"]
@@ -1196,28 +1733,48 @@ def run_search(
         plan_index += 1
 
     rows = dedupe_rows(all_rows)[:requested_count]
+    executed_primary_query_count = executed_search_call_count(executed_queries)
+    verification_query_count = max(len(executed_queries) - executed_primary_query_count, 0)
+    if len(rows) >= requested_count:
+        stop_reason = "target_reached"
+    elif planned_call_cap and executed_primary_query_count >= planned_call_cap and planned_call_cap < planned_query_count:
+        stop_reason = "call_cap_reached"
+    else:
+        stop_reason = "plan_exhausted"
     adaptive_wave_summaries = finalize_adaptive_wave_summaries(
         adaptive_wave_summaries,
         len(rows),
         requested_count,
+        stop_reason=stop_reason,
     )
     search_strategy = summarize_search_strategy(search_input, executed_queries)
     search_depth = str(search_input.get("search_depth") or "extended").strip().lower()
     search_strategy["search_depth"] = search_depth
     search_strategy["search_depth_label"] = SEARCH_DEPTH_LABELS.get(search_depth, "Extended")
     search_strategy["base_query_count"] = len(base_queries)
-    search_strategy["provider_passes"] = int(len(query_plan) / max(len(base_queries), 1))
-    search_strategy["planned_query_count"] = len(query_plan)
+    search_strategy["adaptive_alternate_group_count"] = len(alternate_base_queries)
+    search_strategy["provider_passes"] = int(planned_query_count / max(len(base_queries), 1))
+    search_strategy["planned_query_count"] = planned_query_count
+    search_strategy["planned_call_cap"] = planned_call_cap
+    search_strategy["budgeted_query_count"] = budgeted_query_count
+    search_strategy["call_cap_applied"] = bool(planned_call_cap and planned_call_cap < planned_query_count)
     search_strategy["executed_query_count"] = len(executed_queries)
+    search_strategy["executed_search_query_count"] = executed_primary_query_count
+    search_strategy["verification_query_count"] = verification_query_count
+    search_strategy["stop_reason"] = stop_reason
+    search_strategy["stop_reason_label"] = search_stop_reason_label(stop_reason)
     search_strategy["provider_errors"] = provider_errors
     search_strategy["adaptive_waves"] = {
-        "enabled": requested_count >= ADAPTIVE_WAVE_MIN_REQUESTED_COUNT and len(query_waves) > 1,
+        "enabled": len(query_waves) > 1,
         "planned_wave_count": len(query_waves),
         "completed_wave_count": len([item for item in adaptive_wave_summaries if item["executed_calls"]]),
-        "dynamic_selection": dynamic_wave_selection or {
-            "action": "not_applied",
-            "reason": "No later wave reached or no completed wave signal was available.",
-        },
+        "stop_reason": stop_reason,
+        "stop_reason_label": search_stop_reason_label(stop_reason),
+        "planned_call_cap": planned_call_cap,
+        "budgeted_query_count": budgeted_query_count,
+        "call_cap_applied": bool(planned_call_cap and planned_call_cap < planned_query_count),
+        "evidence_expansion": summarize_evidence_expansion(adaptive_wave_summaries, stop_reason),
+        "dynamic_selection": summarize_dynamic_wave_selections(dynamic_wave_selection_records),
         "waves": adaptive_wave_summaries,
     }
     search_strategy["country_location"] = location_metadata or {}

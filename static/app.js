@@ -19,22 +19,31 @@ const SEARCH_DEPTHS = {
     label: "Standard",
     providers: ["tavily"],
     pageCap: 1,
+    queryWaveTypes: ["evidence_core", "title_focus"],
   },
   medium: {
     label: "Medium",
     providers: ["tavily", "bing_serpapi"],
     pageCap: 2,
+    queryWaveTypes: ["evidence_core", "title_focus"],
   },
   extended: {
     label: "Extended",
     providers: ["tavily", "bing_serpapi", "serpapi"],
     pageCap: 3,
+    queryWaveTypes: ["evidence_core", "title_focus"],
   },
   max: {
     label: "Max",
     providers: ["tavily", "bing_serpapi", "serpapi", "serper"],
     pageCap: 10,
+    queryWaveTypes: ["evidence_core", "title_focus", "evidence_expansion"],
   },
+};
+const QUERY_WAVE_TYPE_LABELS = {
+  evidence_core: "Evidence Core",
+  title_focus: "Title Focus",
+  evidence_expansion: "Evidence Expansion",
 };
 const PAGINATED_SEARCH_PROVIDERS = new Set(["bing_serpapi", "serpapi", "serper"]);
 const SEARCH_INTENT_TERMS = [
@@ -146,6 +155,73 @@ const ROLE_PATTERN_FAMILIES = [
     fixedAnchors: ["Front Office"],
     domainTerms: ["Power Trading", "Energy Trading", "ETRM"],
     toolTerms: ["Orchestrade", "Endur"],
+    evidenceQueryGroups: [
+      {
+        waveType: "evidence_core",
+        label: "BA/function + ETRM tools",
+        orGroups: [
+          ["Business Analyst", "BA", "Business Systems Analyst", "Technical Business Analyst"],
+          ["ETRM", "CTRM", "Endur", "OpenLink", "RightAngle", "Allegro"],
+        ],
+      },
+      {
+        waveType: "evidence_core",
+        label: "BA/function + trading domain",
+        orGroups: [
+          ["Business Analyst", "BA", "business analysis", "requirements", "UAT"],
+          ["Energy Trading", "Power Trading", "Gas Trading", "Commodities", "LNG"],
+        ],
+      },
+      {
+        waveType: "evidence_core",
+        label: "Trade capture/systems + BA/function",
+        orGroups: [
+          ["Trade Capture", "Trading Systems", "Front Office", "Front-Office Trading Desk"],
+          ["Business Analyst", "BA", "Implementation", "Product Delivery"],
+          ["Endur", "OpenLink", "ETRM"],
+        ],
+      },
+      {
+        waveType: "evidence_core",
+        label: "Architecture/functional BA + ETRM",
+        orGroups: [
+          ["Business Analyst", "Business Architecture", "Solution Architecture", "Functional Analyst"],
+          ["ETRM", "CTRM", "Endur", "RightAngle"],
+        ],
+      },
+      {
+        waveType: "evidence_expansion",
+        label: "Consultant/SME + ETRM tools",
+        orGroups: [
+          ["Consultant", "SME", "Specialist", "Functional Consultant", "Implementation Consultant"],
+          ["ETRM", "CTRM", "Endur", "OpenLink", "RightAngle", "Allegro"],
+        ],
+      },
+      {
+        waveType: "evidence_expansion",
+        label: "Developer/architect/support + trading tools",
+        orGroups: [
+          ["Developer", "Architect", "Support Engineer", "Technical Lead", "Functional Lead"],
+          ["Endur", "OpenLink", "RightAngle", "Allegro", "CTRM"],
+        ],
+      },
+      {
+        waveType: "evidence_expansion",
+        label: "Trading systems + energy domain",
+        orGroups: [
+          ["Trading Systems", "Trade Capture", "Commercial Applications", "Energy Solutions"],
+          ["Energy Trading", "Power Trading", "Gas Trading", "Commodities"],
+        ],
+      },
+      {
+        waveType: "evidence_expansion",
+        label: "Risk/settlements/scheduling + energy trading",
+        orGroups: [
+          ["Market Risk", "Credit Risk", "Portfolio Risk", "Settlements", "Gas Scheduling"],
+          ["Energy", "Trading", "Commodities", "Power", "Gas"],
+        ],
+      },
+    ],
   },
   {
     family: "Business Analysis",
@@ -534,6 +610,17 @@ function formatProviderLabel(value) {
   return labels[key] || formatTitleCaseValue(key.replaceAll("_", " "));
 }
 
+function formatQueryWaveTypeLabel(value) {
+  const key = String(value || "").trim().toLowerCase();
+  return QUERY_WAVE_TYPE_LABELS[key] || formatTitleCaseValue(key.replaceAll("_", " "));
+}
+
+function getSearchDepthQueryWaveTypes(searchDepth, rolePattern) {
+  if (rolePattern?.mode !== "semantic") return [];
+  if (rolePattern?.queryStrategy === "grouped_anchors" && !(rolePattern?.evidenceQueryGroups || []).length) return [];
+  return searchDepth?.queryWaveTypes || SEARCH_DEPTHS.extended.queryWaveTypes;
+}
+
 function formatSearchSourceLabel(value) {
   const key = String(value || "").trim().toLowerCase();
   const labels = {
@@ -593,7 +680,7 @@ function formatApproxDuration(milliseconds) {
 
 function estimatePlannedSearchCalls(data) {
   const strategy = data?.confirmed_brief?.search_strategy || state.strategyPreview || {};
-  const planned = Number(strategy.query_count || strategy.planned_query_count || 0);
+  const planned = Number(strategy.call_cap_applied ? strategy.planned_call_cap : strategy.query_count || strategy.planned_query_count || 0);
   if (planned > 0) return planned;
 
   const sourceCount = Math.max(data?.sources?.length || 1, 1);
@@ -1134,8 +1221,27 @@ function formatWaveStatus(status) {
     completed: "Completed",
     not_needed: "Not needed",
     stopped_at_target: "Stopped at target",
+    stopped_at_call_cap: "Stopped at call cap",
   };
   return labels[status] || status || "-";
+}
+
+function formatStopReasonLabel(reason) {
+  const labels = {
+    target_reached: "Target reached",
+    call_cap_reached: "Call cap reached",
+    plan_exhausted: "Plan exhausted",
+  };
+  return labels[reason] || reason || "Plan exhausted";
+}
+
+function formatEvidenceExpansionStatus(expansion) {
+  if (!expansion || !expansion.planned) return "Evidence Expansion not planned";
+  const label = expansion.label || formatWaveStatus(expansion.status);
+  const executed = toReportNumber(expansion.executed_calls);
+  const planned = toReportNumber(expansion.planned_calls);
+  const callCopy = planned ? ` (${executed.toLocaleString()}/${planned.toLocaleString()} calls)` : "";
+  return `${label}${callCopy}`;
 }
 
 function renderDynamicWaveSelection(selection) {
@@ -1148,21 +1254,39 @@ function renderDynamicWaveSelection(selection) {
   }
 
   const ranked = Array.isArray(selection.remaining_groups_ranked) ? selection.remaining_groups_ranked : [];
+  const replacements = Array.isArray(selection.replacement_groups) ? selection.replacement_groups : [];
   const topRanked = ranked.slice(0, 5);
+  const selectionCount = toReportNumber(selection.selection_count || 1);
   return `
     <div class="dynamic-wave-selection">
-      <strong>Dynamic selection applied after Wave ${escapeHtml(selection.applied_after_wave || 1)}</strong>
+      <strong>${selectionCount > 1 ? `${escapeHtml(selectionCount.toLocaleString())} dynamic selections applied` : `Dynamic selection applied after Wave ${escapeHtml(selection.applied_after_wave || 1)}`}</strong>
       <p>
-        Reordered later calls using Wave 1 signal:
+        Reordered later calls using completed-wave signal:
         ${escapeHtml(toReportNumber(selection.strong_group_count).toLocaleString())} productive groups,
         ${escapeHtml(toReportNumber(selection.weak_group_count).toLocaleString())} weak groups.
+        ${replacements.length ? `${escapeHtml(toReportNumber(replacements.length).toLocaleString())} weak-path replacement${replacements.length === 1 ? "" : "s"} planned.` : "No replace-only swaps were needed."}
       </p>
+      ${replacements.length ? `
+        <div class="adaptive-replacement-audit">
+          <strong>Replace-only alternates</strong>
+          <ul>
+            ${replacements.map((item) => `
+              <li>
+                <span class="replacement-from">${escapeHtml(item.replaced_query_group_label || item.replaced_query_group_id)}</span>
+                <span class="replacement-arrow">-&gt;</span>
+                <span class="replacement-to">${escapeHtml(item.replacement_query_group_label || item.replacement_query_group_id)}</span>
+                <small>${escapeHtml(item.reason || "Replaced with an unused semantic-family alternate.")}</small>
+              </li>
+            `).join("")}
+          </ul>
+        </div>
+      ` : ""}
       ${topRanked.length ? `
         <ul>
           ${topRanked.map((group) => `
             <li>
               ${escapeHtml(group.query_group_label || group.query_group_id)}
-              <span>${escapeHtml(formatProviderLabel(group.provider))}, score ${escapeHtml(group.score)}</span>
+              <span>${escapeHtml(group.wave_type_label || group.wave_type || "Wave")}; ${escapeHtml(formatProviderLabel(group.provider))}, score ${escapeHtml(group.score)}</span>
             </li>
           `).join("")}
         </ul>
@@ -1178,11 +1302,17 @@ function renderAdaptiveWaveReport(adaptiveWaves) {
   return `
     <details class="provider-report-waves">
       <summary>Adaptive waves (${escapeHtml(toReportNumber(adaptiveWaves.completed_wave_count).toLocaleString())}/${escapeHtml(toReportNumber(adaptiveWaves.planned_wave_count).toLocaleString())} used)</summary>
+      <p class="provider-report-note">
+        Stop reason: ${escapeHtml(adaptiveWaves.stop_reason_label || formatStopReasonLabel(adaptiveWaves.stop_reason))}.
+        ${adaptiveWaves.call_cap_applied ? `Budget cap: ${escapeHtml(toReportNumber(adaptiveWaves.planned_call_cap).toLocaleString())} provider calls.` : ""}
+        ${escapeHtml(formatEvidenceExpansionStatus(adaptiveWaves.evidence_expansion))}
+      </p>
       <div class="provider-report-table-wrap">
         <table class="provider-report-table">
           <thead>
             <tr>
               <th>Wave</th>
+              <th>Type</th>
               <th>Status</th>
               <th>Calls</th>
               <th>Raw</th>
@@ -1194,6 +1324,7 @@ function renderAdaptiveWaveReport(adaptiveWaves) {
             ${waves.map((wave) => `
               <tr>
                 <td><strong>${escapeHtml(wave.label || `Wave ${wave.wave}`)}</strong></td>
+                <td>${escapeHtml(wave.wave_type_label || wave.wave_type || "-")}</td>
                 <td>${escapeHtml(formatWaveStatus(wave.status))}</td>
                 <td>${escapeHtml(toReportNumber(wave.executed_calls).toLocaleString())}/${escapeHtml(toReportNumber(wave.planned_calls).toLocaleString())}</td>
                 <td>${escapeHtml(toReportNumber(wave.raw_rows).toLocaleString())}</td>
@@ -1240,6 +1371,7 @@ function queryGroupReportToCsv(report, run) {
   const headers = [
     "Run ID",
     "Wave",
+    "Wave type",
     "Query group",
     "Source",
     "Location",
@@ -1259,6 +1391,7 @@ function queryGroupReportToCsv(report, run) {
   const rows = (report.groups || []).filter(isVisibleQueryGroup).map((group) => [
     run?.id || "",
     group.adaptive_wave_label || group.adaptive_wave || "",
+    group.wave_type_label || group.wave_type || "",
     group.query_group_label || group.skill_input || group.query_group_id,
     group.source_site || "",
     group.location_input || "",
@@ -1327,7 +1460,10 @@ function renderQueryGroupContributionReport(report) {
           <tbody>
             ${groups.map((group) => `
               <tr>
-                <td>${escapeHtml(group.adaptive_wave_label || `Wave ${group.adaptive_wave || 1}`)}</td>
+                <td>
+                  ${escapeHtml(group.adaptive_wave_label || `Wave ${group.adaptive_wave || 1}`)}
+                  ${group.wave_type_label ? `<span class="query-group-sample">${escapeHtml(group.wave_type_label)}</span>` : ""}
+                </td>
                 <td>
                   <strong>${escapeHtml(group.query_group_label || group.skill_input || group.query_group_id)}</strong>
                   <span class="query-group-sample">${escapeHtml(group.sample_query || "")}</span>
@@ -1401,6 +1537,30 @@ function buildLocationExplanation(run, report) {
   return "No location constraint was selected for this run.";
 }
 
+function buildStopReasonExplanation(run, report) {
+  const strategy = run?.search_strategy || {};
+  const totals = report?.totals || {};
+  const stopReason = strategy.stop_reason || strategy.adaptive_waves?.stop_reason || "";
+  const requested = toReportNumber(totals.requested_candidates || run?.search?.results_limit);
+  const finalCount = toReportNumber(totals.final_candidates || run?.candidates?.length);
+  const cap = toReportNumber(strategy.planned_call_cap || strategy.adaptive_waves?.planned_call_cap);
+  const fullPlan = toReportNumber(strategy.planned_query_count || totals.planned_calls);
+
+  if (stopReason === "target_reached") {
+    return requested
+      ? `Stopped because the requested target was reached: ${finalCount.toLocaleString()} / ${requested.toLocaleString()} candidates.`
+      : "Stopped because the candidate target was reached.";
+  }
+  if (stopReason === "call_cap_reached") {
+    const planCopy = fullPlan && cap && fullPlan > cap ? ` Full plan had ${fullPlan.toLocaleString()} calls.` : "";
+    return `Stopped at the Max call cap (${cap.toLocaleString()} provider calls) to avoid spending beyond the planned budget.${planCopy}`;
+  }
+  if (stopReason === "plan_exhausted") {
+    return "Stopped because the planned query/page budget was exhausted before the target was filled.";
+  }
+  return "Stopped after the current planned search budget completed.";
+}
+
 function buildAdaptiveExplanation(run, report) {
   const strategy = run?.search_strategy || {};
   const adaptive = strategy.adaptive_waves || {};
@@ -1410,9 +1570,19 @@ function buildAdaptiveExplanation(run, report) {
   const requested = toReportNumber(totals.requested_candidates || run?.search?.results_limit);
   const finalCount = toReportNumber(totals.final_candidates || run?.candidates?.length);
   const selection = adaptive.dynamic_selection || {};
+  const expansion = adaptive.evidence_expansion || {};
 
   if (!adaptive.enabled || !planned) {
     return "Adaptive waves were not needed for this search size.";
+  }
+  if (expansion.status === "skipped_call_cap") {
+    return "Evidence Expansion was planned, but the Max call cap was reached before that wave.";
+  }
+  if (expansion.status === "skipped_target_reached") {
+    return "Evidence Expansion was skipped because earlier waves filled the requested target.";
+  }
+  if (expansion.ran) {
+    return "Evidence Expansion ran after Evidence Core and Title Focus to widen recall.";
   }
   if (completed <= 1 && requested && finalCount >= requested) {
     return `Wave 1 filled the requested ${requested.toLocaleString()} candidates, so later waves were skipped.`;
@@ -1442,14 +1612,18 @@ function renderSearchExplanation(run, providerReport, queryGroupReport) {
   const requested = toReportNumber(totals.requested_candidates || search.results_limit);
   const finalCount = toReportNumber(totals.final_candidates || run?.candidates?.length);
   const plannedCalls = toReportNumber(totals.planned_calls || strategy.planned_query_count || strategy.query_count);
-  const executedCalls = toReportNumber(totals.executed_calls || strategy.executed_query_count || run?.queries?.length);
+  const executedCalls = toReportNumber(totals.executed_calls || strategy.executed_search_query_count || strategy.executed_query_count || run?.queries?.length);
+  const budgetedCalls = toReportNumber(strategy.planned_call_cap || strategy.budgeted_query_count);
+  const hasBudgetCap = Boolean(strategy.call_cap_applied && budgetedCalls && plannedCalls && budgetedCalls < plannedCalls);
   const topProviders = getTopProviderContribution(providerReport);
   const topGroups = getTopQueryGroupContribution(queryGroupReport);
   const resultText = requested
     ? `${finalCount.toLocaleString()} / ${requested.toLocaleString()} candidates`
     : `${finalCount.toLocaleString()} candidates`;
   const callText = plannedCalls
-    ? `${executedCalls.toLocaleString()} of ${plannedCalls.toLocaleString()} planned provider calls ran`
+    ? hasBudgetCap
+      ? `${executedCalls.toLocaleString()} of ${budgetedCalls.toLocaleString()} budgeted provider calls ran (${plannedCalls.toLocaleString()} full-plan calls available)`
+      : `${executedCalls.toLocaleString()} of ${plannedCalls.toLocaleString()} planned provider calls ran`
     : `${executedCalls.toLocaleString()} provider calls ran`;
 
   return `
@@ -1469,6 +1643,7 @@ function renderSearchExplanation(run, providerReport, queryGroupReport) {
         <div class="search-explanation-block">
           <span>What actually happened</span>
           <p>${escapeHtml(callText)} in ${escapeHtml(formatBenchmarkDuration(run?.duration_seconds))}.</p>
+          <p>${escapeHtml(buildStopReasonExplanation(run, providerReport))}</p>
           <p>${escapeHtml(buildLocationExplanation(run, providerReport))}</p>
         </div>
         <div class="search-explanation-block">
@@ -1544,6 +1719,8 @@ function benchmarkSummaryToCsv(runs) {
     "Duration seconds",
     "Executed calls",
     "Planned calls",
+    "Budgeted call cap",
+    "Stop reason",
     "Completed waves",
     "Dynamic action",
     "Provider lift",
@@ -1560,6 +1737,8 @@ function benchmarkSummaryToCsv(runs) {
     run.duration_seconds,
     run.executed_query_count,
     run.planned_query_count,
+    run.call_cap_applied ? run.planned_call_cap : "",
+    run.stop_reason,
     run.completed_wave_count,
     run.dynamic_action,
     formatBenchmarkProviders(run.provider_lift),
@@ -1681,7 +1860,7 @@ function renderBenchmarkSummaryContent(currentRun, runs, activeFilter = "all") {
               </td>
               <td>${escapeHtml(toReportNumber(run.candidate_count).toLocaleString())}</td>
               <td>${escapeHtml(formatBenchmarkDuration(run.duration_seconds))}</td>
-              <td>${escapeHtml(toReportNumber(run.executed_query_count).toLocaleString())}/${escapeHtml(toReportNumber(run.planned_query_count).toLocaleString())}</td>
+              <td>${escapeHtml(toReportNumber(run.executed_query_count).toLocaleString())}/${escapeHtml(toReportNumber(run.call_cap_applied ? run.planned_call_cap : run.planned_query_count).toLocaleString())}</td>
               <td>${escapeHtml(formatBenchmarkProviders(run.provider_lift))}</td>
               <td>${escapeHtml(formatBenchmarkQueryGroups(run.top_query_groups))}</td>
             </tr>
@@ -1976,6 +2155,9 @@ function renderCandidateDetails(candidate) {
   const providerCopy = candidate.search_provider
     ? `<p class="field-note">Found via ${escapeHtml(formatProviderLabel(candidate.search_provider))}</p>`
     : "";
+  const queryContext = [candidate.matched_role_query, candidate.matched_stack_query]
+    .filter(Boolean)
+    .join(" | ");
 
   container.className = "details-card";
   container.innerHTML = `
@@ -1990,6 +2172,10 @@ function renderCandidateDetails(candidate) {
       <h4>Profile</h4>
       <p><a href="${escapeHtml(candidate.profile_url)}" target="_blank" rel="noreferrer">Open source profile</a></p>
       ${providerCopy}
+      ${queryContext ? `<p class="field-note">Matched query context: ${escapeHtml(queryContext)}</p>` : ""}
+      ${candidate.query_wave_type_label ? `<p class="field-note">Matched wave type: ${escapeHtml(candidate.query_wave_type_label)}</p>` : ""}
+      ${candidate.query_group_label ? `<p class="field-note">Query group: ${escapeHtml(candidate.query_group_label)}</p>` : ""}
+      ${candidate.result_title ? `<p class="field-note">Indexed title: ${escapeHtml(candidate.result_title)}</p>` : ""}
       <p>${escapeHtml(candidate.short_description || "No indexed description available.")}</p>
     </div>
     <div class="detail-block">
@@ -2485,6 +2671,7 @@ function buildSemanticRolePattern(primaryRole, roleVariants, context = null) {
       fixedAnchors: [],
       domainTerms: [],
       toolTerms: [],
+      evidenceQueryGroups: [],
       titlePattern: buildTitlePattern(primaryRole, roleVariants),
     };
   }
@@ -2498,6 +2685,7 @@ function buildSemanticRolePattern(primaryRole, roleVariants, context = null) {
     fixedAnchors: matched.fixedAnchors || [],
     domainTerms: matched.domainTerms || [],
     toolTerms: matched.toolTerms || [],
+    evidenceQueryGroups: matched.evidenceQueryGroups || [],
     titlePattern: `${buildQuotedOrGroup(matched.coreTerms)} ${buildQuotedOrGroup(matched.roleTerms)}`.trim(),
   };
 }
@@ -2523,49 +2711,218 @@ function buildLocationQueryValues(locations) {
   return hasConcreteLocation ? values.filter((value) => value.toLowerCase() !== "remote") : values;
 }
 
-function buildGroupedAnchorPreviewQueries(rolePattern, locations, sources) {
+function buildEvidencePreviewQuery(group, location) {
+  const parts = ['site:linkedin.com/in/'];
+  (group.requiredTerms || []).forEach((term) => {
+    if (term) parts.push(`"${term}"`);
+  });
+  (group.orGroups || []).forEach((values) => {
+    const groupQuery = buildQuotedOrGroup(values || []);
+    if (groupQuery) parts.push(groupQuery);
+  });
+  if (location) parts.push(`"${location}"`);
+  return parts.join(" ");
+}
+
+function buildTitleFocusGroupedAnchorPreviewQueries(rolePattern, location) {
   const sampleQueries = [];
   const domainTerms = rolePattern.domainTerms?.length ? rolePattern.domainTerms : [""];
   const toolTerms = [...(rolePattern.toolTerms || []), ""];
 
+  domainTerms.forEach((domainTerm) => {
+    toolTerms.forEach((toolTerm) => {
+      const parts = ['site:linkedin.com/in/'];
+      const titlePattern = rolePattern.titlePattern;
+      const fixedAnchors = rolePattern.fixedAnchors || [];
+      if (titlePattern) parts.push(titlePattern);
+      fixedAnchors.forEach((anchor) => {
+        if (anchor) parts.push(`"${anchor}"`);
+      });
+      if (domainTerm) parts.push(`"${domainTerm}"`);
+      if (toolTerm) parts.push(`"${toolTerm}"`);
+      if (location) parts.push(`"${location}"`);
+      sampleQueries.push(parts.join(" "));
+    });
+  });
+
+  const broadParts = ['site:linkedin.com/in/'];
+  if (rolePattern.titlePattern) broadParts.push(rolePattern.titlePattern);
+  (rolePattern.fixedAnchors || []).forEach((anchor) => {
+    if (anchor) broadParts.push(`"${anchor}"`);
+  });
+  const domainGroup = buildQuotedOrGroup(rolePattern.domainTerms || []);
+  if (domainGroup) broadParts.push(domainGroup);
+  if (location) broadParts.push(`"${location}"`);
+  sampleQueries.push(broadParts.join(" "));
+
+  return dedupeTextValues(sampleQueries);
+}
+
+function buildGroupedAnchorPreviewQueries(rolePattern, locations, sources, waveTypes = []) {
+  const sampleQueries = [];
+  const selectedWaveTypes = waveTypes.length ? waveTypes : ["title_focus"];
+
   (sources.length ? sources : ["linkedin"]).slice(0, 1).forEach(() => {
     (locations.length ? locations : [""]).slice(0, 5).forEach((location) => {
-      domainTerms.forEach((domainTerm) => {
-        toolTerms.forEach((toolTerm) => {
-          const parts = ['site:linkedin.com/in/'];
-          const titlePattern = rolePattern.titlePattern;
-          const fixedAnchors = rolePattern.fixedAnchors || [];
-          if (titlePattern) parts.push(titlePattern);
-          fixedAnchors.forEach((anchor) => {
-            if (anchor) parts.push(`"${anchor}"`);
-          });
-          if (domainTerm) parts.push(`"${domainTerm}"`);
-          if (toolTerm) parts.push(`"${toolTerm}"`);
-          if (location) parts.push(`"${location}"`);
-          sampleQueries.push(parts.join(" "));
-        });
+      selectedWaveTypes.forEach((waveType) => {
+        if (waveType === "title_focus") {
+          sampleQueries.push(...buildTitleFocusGroupedAnchorPreviewQueries(rolePattern, location));
+          return;
+        }
+        (rolePattern.evidenceQueryGroups || [])
+          .filter((group) => group.waveType === waveType)
+          .forEach((group) => sampleQueries.push(buildEvidencePreviewQuery(group, location)));
       });
-
-      const broadParts = ['site:linkedin.com/in/'];
-      if (rolePattern.titlePattern) broadParts.push(rolePattern.titlePattern);
-      (rolePattern.fixedAnchors || []).forEach((anchor) => {
-        if (anchor) broadParts.push(`"${anchor}"`);
-      });
-      const domainGroup = buildQuotedOrGroup(rolePattern.domainTerms || []);
-      if (domainGroup) broadParts.push(domainGroup);
-      if (location) broadParts.push(`"${location}"`);
-      sampleQueries.push(broadParts.join(" "));
     });
   });
 
   return dedupeTextValues(sampleQueries);
 }
 
-function buildGroupedAnchorQueryCount(rolePattern, locations, sources) {
+function buildGroupedAnchorQueryCount(rolePattern, locations, sources, waveTypes = []) {
+  const selectedWaveTypes = waveTypes.length ? waveTypes : ["title_focus"];
   const domainCount = Math.max((rolePattern.domainTerms || []).length, 1);
   const toolCount = (rolePattern.toolTerms || []).length + 1;
-  const variantCount = domainCount * toolCount + 1;
+  const titleFocusCount = domainCount * toolCount + 1;
+  const evidenceCount = selectedWaveTypes.reduce((total, waveType) => {
+    if (waveType === "title_focus") return total + titleFocusCount;
+    return total + (rolePattern.evidenceQueryGroups || []).filter((group) => group.waveType === waveType).length;
+  }, 0);
+  const variantCount = evidenceCount || titleFocusCount;
   return variantCount * Math.max(locations.length, 1) * Math.max(sources.length, 1);
+}
+
+function genericWaveGroupLimit(resultsLimit, waveType) {
+  const requested = Number(resultsLimit) || 20;
+  if (waveType === "evidence_expansion") {
+    if (requested >= 100) return 4;
+    if (requested > 40) return 3;
+    return 2;
+  }
+  if (waveType === "title_focus") {
+    if (requested >= 100) return 6;
+    if (requested > 40) return 4;
+    return 3;
+  }
+  if (requested >= 100) return 8;
+  if (requested > 40) return 5;
+  return 3;
+}
+
+function genericExpansionRoleTerms(rolePattern) {
+  return dedupeTextValues([
+    ...(rolePattern.roleTerms || []),
+    "Engineer",
+    "Developer",
+    "Consultant",
+    "Specialist",
+    "Lead",
+    "Manager",
+    "Architect",
+    "Analyst",
+    "Owner",
+    "SME",
+  ]);
+}
+
+function buildGenericEvidenceQuery(rolePattern, skillGroup, waveType, location) {
+  const parts = ['site:linkedin.com/in/'];
+  const coreGroup = buildQuotedOrGroup(rolePattern.coreTerms || []);
+  const roleGroup = buildQuotedOrGroup(
+    waveType === "evidence_expansion" ? genericExpansionRoleTerms(rolePattern) : rolePattern.roleTerms || []
+  );
+  const skillQueryGroup = buildQuotedOrGroup(skillGroup || []);
+  [coreGroup, roleGroup, skillQueryGroup].forEach((group) => {
+    if (group) parts.push(group);
+  });
+  if (location) parts.push(`"${location}"`);
+  return parts.join(" ");
+}
+
+function buildGenericTitleFocusQuery(titles, skillGroup, location) {
+  const parts = ['site:linkedin.com/in/'];
+  const titleQueryGroup = buildQuotedOrGroup(titles || []);
+  if (titleQueryGroup) parts.push(titleQueryGroup);
+  const skillQueryGroup = buildQuotedOrGroup(skillGroup || []);
+  if (skillQueryGroup) parts.push(skillQueryGroup);
+  if (location) parts.push(`"${location}"`);
+  return parts.join(" ");
+}
+
+function buildGenericEvidencePreviewQueries(rolePattern, titles, skillGroups, locations, sources, waveTypes = [], resultsLimit = 20) {
+  const sampleQueries = [];
+  const selectedWaveTypes = waveTypes.length ? waveTypes : ["title_focus"];
+  (sources.length ? sources : ["linkedin"]).slice(0, 1).forEach(() => {
+    (locations.length ? locations : [""]).slice(0, 5).forEach((location) => {
+      selectedWaveTypes.forEach((waveType) => {
+        const limit = genericWaveGroupLimit(resultsLimit, waveType);
+        (skillGroups.length ? skillGroups : [[]]).slice(0, limit).forEach((skillGroup) => {
+          if (waveType === "title_focus") {
+            sampleQueries.push(buildGenericTitleFocusQuery(titles, skillGroup, location));
+          } else {
+            sampleQueries.push(buildGenericEvidenceQuery(rolePattern, skillGroup, waveType, location));
+          }
+        });
+      });
+    });
+  });
+  return dedupeTextValues(sampleQueries);
+}
+
+function buildGenericEvidenceQueryCount(skillGroups, locations, sources, waveTypes = [], resultsLimit = 20) {
+  const selectedWaveTypes = waveTypes.length ? waveTypes : ["title_focus"];
+  const groupCount = selectedWaveTypes.reduce((total, waveType) => {
+    return total + Math.min(Math.max(skillGroups.length, 1), genericWaveGroupLimit(resultsLimit, waveType));
+  }, 0);
+  return groupCount * Math.max(locations.length, 1) * Math.max(sources.length, 1);
+}
+
+function defaultMaxSearchCallCap(resultsLimit, fullPlanCount, firstExpansionCall = 0) {
+  const requested = Number(resultsLimit) || 20;
+  const thresholds = [
+    [200, 480],
+    [100, 320],
+    [50, 160],
+    [0, 80],
+  ];
+  let cap = fullPlanCount;
+  thresholds.some(([threshold, thresholdCap]) => {
+    if (requested >= threshold) {
+      cap = thresholdCap;
+      return true;
+    }
+    return false;
+  });
+  if (firstExpansionCall) {
+    const expansionBudget = Math.max(20, Math.min(60, Math.ceil(requested / 10)));
+    cap = Math.max(cap, firstExpansionCall + expansionBudget - 1);
+  }
+  return Math.min(fullPlanCount, cap);
+}
+
+function estimateWaveBaseQueryCount(rolePattern, titles, skillGroups, locations, sources, waveType, resultsLimit, isGroupedAnchorStrategy) {
+  if (isGroupedAnchorStrategy) {
+    return buildGroupedAnchorQueryCount(rolePattern, locations, sources, [waveType]);
+  }
+  return buildGenericEvidenceQueryCount(skillGroups, locations, sources, [waveType], resultsLimit);
+}
+
+function estimateFirstExpansionCall(rolePattern, titles, skillGroups, locations, sources, waveTypes, resultsLimit, providerPasses, isGroupedAnchorStrategy) {
+  const expansionIndex = (waveTypes || []).indexOf("evidence_expansion");
+  if (expansionIndex < 0) return 0;
+  const precedingBaseQueries = waveTypes.slice(0, expansionIndex).reduce((total, waveType) => {
+    return total + estimateWaveBaseQueryCount(
+      rolePattern,
+      titles,
+      skillGroups,
+      locations,
+      sources,
+      waveType,
+      resultsLimit,
+      isGroupedAnchorStrategy,
+    );
+  }, 0);
+  return precedingBaseQueries * Math.max(providerPasses || 1, 1) + 1;
 }
 
 function getAdaptiveWaveCount(baseQueryCount, resultsLimit) {
@@ -2605,12 +2962,16 @@ function buildStrategyPreviewFromForm() {
     requirementBrief: state.searchMode === "requirement_url" ? state.requirementBrief : null,
     techGroups: lines(form.tech_groups.value),
   });
+  const queryWaveTypes = getSearchDepthQueryWaveTypes(searchDepth, rolePattern);
+  const queryWaveLabels = queryWaveTypes.map(formatQueryWaveTypeLabel);
   const expandedSkillGroups = expandSkillGroupsForTarget(skillGroups, rolePattern.family, form.num.value);
   const isGroupedAnchorStrategy = rolePattern.queryStrategy === "grouped_anchors";
   const baseQueryCount = isGroupedAnchorStrategy
-    ? buildGroupedAnchorQueryCount(rolePattern, locations, sources)
+    ? buildGroupedAnchorQueryCount(rolePattern, locations, sources, queryWaveTypes)
+    : queryWaveTypes.length
+      ? buildGenericEvidenceQueryCount(expandedSkillGroups, locations, sources, queryWaveTypes, form.num.value)
     : Math.max(expandedSkillGroups.length, 1) * Math.max(locations.length, 1) * Math.max(sources.length, 1);
-  const adaptiveWaveCount = getAdaptiveWaveCount(baseQueryCount, form.num.value);
+  const adaptiveWaveCount = queryWaveTypes.length || getAdaptiveWaveCount(baseQueryCount, form.num.value);
   const adaptiveWaveDisabledReason = Number(form.num.value) >= 100
     ? "Adaptive waves: off because the current fields produce only one query group."
     : "Adaptive waves: off for this smaller search.";
@@ -2620,7 +2981,9 @@ function buildStrategyPreviewFromForm() {
   const titlePattern = rolePattern.titlePattern;
 
   if (isGroupedAnchorStrategy) {
-    sampleQueries = buildGroupedAnchorPreviewQueries(rolePattern, locations, sources);
+    sampleQueries = buildGroupedAnchorPreviewQueries(rolePattern, locations, sources, queryWaveTypes);
+  } else if (queryWaveTypes.length) {
+    sampleQueries = buildGenericEvidencePreviewQueries(rolePattern, titles, expandedSkillGroups, locations, sources, queryWaveTypes, form.num.value);
   } else {
     (expandedSkillGroups.length ? expandedSkillGroups : [[]]).slice(0, 5).forEach((skills) => {
       (locations.length ? locations : [""]).slice(0, 1).forEach((location) => {
@@ -2634,6 +2997,20 @@ function buildStrategyPreviewFromForm() {
     });
   }
   const providerSampleQueries = applyProviderDepthToPreview(sampleQueries, searchDepth.providers);
+  const firstExpansionCall = estimateFirstExpansionCall(
+    rolePattern,
+    titles,
+    expandedSkillGroups,
+    locations,
+    sources,
+    queryWaveTypes,
+    form.num.value,
+    providerPasses,
+    isGroupedAnchorStrategy,
+  );
+  const plannedCallCap = searchDepthKey === "max"
+    ? defaultMaxSearchCallCap(form.num.value, queryCount, firstExpansionCall)
+    : queryCount;
 
   return {
     primary_role: primaryRole,
@@ -2653,12 +3030,16 @@ function buildStrategyPreviewFromForm() {
     search_depth: searchDepthKey,
     search_depth_label: searchDepth.label,
     providers: searchDepth.providers,
+    query_wave_types: queryWaveTypes,
+    query_wave_labels: queryWaveLabels,
     provider_passes: providerPasses,
     base_query_count: baseQueryCount,
     adaptive_wave_count: adaptiveWaveCount,
     adaptive_waves_enabled: adaptiveWaveCount > 1,
     adaptive_wave_disabled_reason: adaptiveWaveDisabledReason,
     query_count: queryCount,
+    planned_call_cap: plannedCallCap,
+    call_cap_applied: plannedCallCap < queryCount,
     location_policy: "strict",
     sample_queries: sampleQueries.slice(0, 5),
     sample_provider_queries: providerSampleQueries.slice(0, 5),
@@ -2675,7 +3056,7 @@ function renderSearchStrategyPreview() {
   container.innerHTML = `
     <div class="requirement-brief-header">
       <strong>Search strategy preview</strong>
-      <span>${strategy.query_count} planned searches</span>
+      <span>${strategy.call_cap_applied ? `${strategy.planned_call_cap}/${strategy.query_count} budgeted searches` : `${strategy.query_count} planned searches`}</span>
     </div>
     <div class="strategy-summary">
       <strong>${escapeHtml(strategy.role_pattern_family || "Custom role")}</strong>
@@ -2720,7 +3101,9 @@ function renderSearchStrategyPreview() {
       <summary>Search depth</summary>
       <ul>
         <li>${escapeHtml(strategy.search_depth_label || "Extended")}: ${escapeHtml((strategy.providers || []).map(formatProviderLabel).join(" + ") || "No provider selected.")}</li>
-        <li>Base queries: ${escapeHtml(strategy.base_query_count || strategy.query_count)}; provider/page passes: ${escapeHtml(strategy.provider_passes || strategy.query_count)}; planned calls: ${escapeHtml(strategy.query_count)}.</li>
+        <li>Base queries: ${escapeHtml(strategy.base_query_count || strategy.query_count)}; provider/page passes: ${escapeHtml(strategy.provider_passes || strategy.query_count)}; planned calls: ${escapeHtml(strategy.query_count)}${strategy.call_cap_applied ? `; Max budget cap: ${escapeHtml(strategy.planned_call_cap)}.` : "."}</li>
+        ${strategy.query_wave_labels?.length ? `<li>Wave plan: ${escapeHtml(strategy.query_wave_labels.join(" -> "))}.</li>` : ""}
+        ${strategy.query_wave_types?.includes("evidence_expansion") ? `<li>Evidence Expansion is the final high-recall wave and runs only if earlier waves have not filled the selected Results Limit.</li>` : ""}
       </ul>
     </details>
     <details class="brief-details">
@@ -2985,9 +3368,11 @@ function renderResults(run) {
   const providerCopy = providers.length ? ` - ${providers.map(formatProviderLabel).join(" + ")}` : "";
   const completedWaves = Number(run.search_strategy?.adaptive_waves?.completed_wave_count || 0);
   const waveCopy = completedWaves > 1 ? ` - ${completedWaves} waves` : "";
+  const queryCountCopy = Number(run.search_strategy?.executed_search_query_count || 0) || run.queries_count;
+  const stopCopy = run.search_strategy?.stop_reason ? ` - ${formatStopReasonLabel(run.search_strategy.stop_reason).toLowerCase()}` : "";
   const providerErrors = Array.isArray(run.provider_errors) ? run.provider_errors : [];
   const warningCopy = providerErrors.length ? ` - ${providerErrors.length} provider warning${providerErrors.length === 1 ? "" : "s"}` : "";
-  meta.textContent = `${run.candidates.length} candidates - ${run.queries_count} queries - ${run.duration_seconds}s${locationPolicy}${providerCopy}${waveCopy}${warningCopy}${projectCopy}`;
+  meta.textContent = `${run.candidates.length} candidates - ${queryCountCopy} queries - ${run.duration_seconds}s${locationPolicy}${providerCopy}${waveCopy}${stopCopy}${warningCopy}${projectCopy}`;
   renderProviderAlerts(providerErrors);
   renderSearchDiagnostics(run);
 

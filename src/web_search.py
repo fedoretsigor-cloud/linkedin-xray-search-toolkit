@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 
 from src.enrichment import build_candidate_analysis
 from src.location_policy import build_location_query_values
-from src.query_group_expander import expand_skill_groups
+from src.profile_evidence import N_A, extract_profile_role, extract_profile_stack
+from src.query_group_expander import build_skill_group_plan
 from src.role_pattern_builder import build_role_pattern
 from src.scoring import score_candidate
 from src.search_intent import build_search_intent
@@ -15,6 +16,13 @@ SEARCH_DEPTH_PROVIDERS = {
     "medium": ["tavily", "bing_serpapi"],
     "extended": ["tavily", "bing_serpapi", "serpapi"],
     "max": ["tavily", "bing_serpapi", "serpapi", "serper"],
+}
+
+SEARCH_DEPTH_QUERY_WAVE_TYPES = {
+    "standard": ["evidence_core", "title_focus"],
+    "medium": ["evidence_core", "title_focus"],
+    "extended": ["evidence_core", "title_focus"],
+    "max": ["evidence_core", "title_focus", "evidence_expansion"],
 }
 
 
@@ -70,6 +78,15 @@ def resolve_search_depth_providers(search_depth, providers):
     if cleaned_providers:
         return cleaned_providers
     return SEARCH_DEPTH_PROVIDERS.get(clean_text(search_depth).lower(), SEARCH_DEPTH_PROVIDERS["extended"])
+
+
+def resolve_search_depth_query_wave_types(search_depth, role_pattern):
+    if role_pattern.get("mode") != "semantic":
+        return []
+    if role_pattern.get("query_strategy") == "grouped_anchors" and not role_pattern.get("evidence_query_groups"):
+        return []
+    depth = clean_text(search_depth).lower() or "extended"
+    return SEARCH_DEPTH_QUERY_WAVE_TYPES.get(depth, SEARCH_DEPTH_QUERY_WAVE_TYPES["extended"])
 
 
 def build_web_search_request(payload, default_results):
@@ -130,11 +147,14 @@ def build_web_search_request(payload, default_results):
             "tech_groups": search["tech_groups"],
         },
     )
-    skill_groups = expand_skill_groups(skill_groups, role_pattern, requested_num)
+    skill_group_plan = build_skill_group_plan(skill_groups, role_pattern, requested_num)
+    skill_groups = skill_group_plan["active_groups"]
+    query_wave_types = resolve_search_depth_query_wave_types(search["search_depth"], role_pattern)
 
     search_input = {
         "titles": search["titles"],
         "skill_groups": skill_groups,
+        "alternate_skill_groups": skill_group_plan["alternate_groups"],
         "locations": build_location_query_values(search["locations"]) or [""],
         "display_locations": search["locations"],
         "location_policy": search["location_policy"],
@@ -144,11 +164,13 @@ def build_web_search_request(payload, default_results):
         "provider": None,
         "providers": search["providers"],
         "search_depth": search["search_depth"],
+        "query_wave_types": query_wave_types,
         "search_intent": search_intent,
         "role_pattern": role_pattern,
     }
     search["search_intent"] = search_intent
     search["role_pattern"] = role_pattern
+    search["query_wave_types"] = query_wave_types
     search["stack_summary"] = ", ".join(search["tech_groups"])
     search["provider_summary"] = ", ".join(search["providers"])
     return search, search_input
@@ -158,14 +180,29 @@ def transform_candidates(rows, search):
     candidates = []
     for index, row in enumerate(rows, start=1):
         analysis = score_candidate(row, search)
+        evidence_role = extract_profile_role(row) or N_A
+        evidence_stack = extract_profile_stack(row, search) or N_A
+        display_row = {
+            **row,
+            "display_role": evidence_role,
+            "display_stack": evidence_stack,
+        }
         candidates.append(
             {
                 "id": f"cand-{index}",
                 "name": clean_text(row.get("profile_name", "")) or "Unknown candidate",
-                "role": clean_text(row.get("role", "")),
+                "role": evidence_role,
                 "location": clean_text(row.get("location", "")),
                 "location_match": row.get("location_match", {}),
-                "stack": clean_text(row.get("technology", "")),
+                "stack": evidence_stack,
+                "matched_role_query": clean_text(row.get("query_role") or row.get("role", "")),
+                "matched_stack_query": clean_text(row.get("query_technology") or row.get("technology", "")),
+                "query_group_label": clean_text(row.get("query_group_label", "")),
+                "query_wave_type": clean_text(row.get("query_wave_type", "")),
+                "query_wave_type_label": clean_text(row.get("query_wave_type_label", "")),
+                "adaptive_wave_type": clean_text(row.get("adaptive_wave_type", "")),
+                "adaptive_wave_type_label": clean_text(row.get("adaptive_wave_type_label", "")),
+                "result_title": clean_text(row.get("result_title", "")),
                 "source": clean_text(row.get("source_site", "")),
                 "search_provider": clean_text(row.get("search_provider", "")),
                 "status": analysis["status"],
@@ -177,10 +214,57 @@ def transform_candidates(rows, search):
                 "maker_extraction_status": clean_text(row.get("maker_extraction_status", "")),
                 "is_linkedin_profile": "Yes" if row.get("is_linkedin_profile") else "No",
                 "search_query": clean_text(row.get("search_query", "")),
-                "analysis": build_candidate_analysis(row, search, analysis),
+                "analysis": build_candidate_analysis(display_row, search, analysis),
             }
         )
     return sorted(candidates, key=lambda item: item["score"], reverse=True)
+
+
+def candidate_evidence_row(candidate):
+    legacy_role = clean_text(candidate.get("role", ""))
+    legacy_stack = clean_text(candidate.get("stack", ""))
+    matched_role = clean_text(candidate.get("matched_role_query", ""))
+    matched_stack = clean_text(candidate.get("matched_stack_query", ""))
+    return {
+        "profile_name": clean_text(candidate.get("name") or candidate.get("profile_name", "")),
+        "result_title": clean_text(candidate.get("result_title", "")),
+        "short_description": clean_text(candidate.get("short_description", "")),
+        "location": clean_text(candidate.get("location", "")),
+        "query_role": matched_role or legacy_role,
+        "role": matched_role or legacy_role,
+        "query_technology": matched_stack or legacy_stack,
+        "technology": matched_stack or legacy_stack,
+    }
+
+
+def hydrate_candidate_evidence(candidate, search):
+    if not isinstance(candidate, dict):
+        return candidate
+    row = candidate_evidence_row(candidate)
+    evidence_role = extract_profile_role(row) or N_A
+    evidence_stack = extract_profile_stack(row, search or {}) or N_A
+    hydrated = dict(candidate)
+    legacy_role = clean_text(candidate.get("role", ""))
+    legacy_stack = clean_text(candidate.get("stack", ""))
+    if not clean_text(hydrated.get("matched_role_query", "")) and legacy_role and legacy_role != evidence_role:
+        hydrated["matched_role_query"] = legacy_role
+    if not clean_text(hydrated.get("matched_stack_query", "")) and legacy_stack and legacy_stack != evidence_stack:
+        hydrated["matched_stack_query"] = legacy_stack
+    hydrated["role"] = evidence_role
+    hydrated["stack"] = evidence_stack
+    return hydrated
+
+
+def hydrate_run_candidate_evidence(run):
+    if not isinstance(run, dict):
+        return run
+    search = run.get("search", {}) if isinstance(run.get("search"), dict) else {}
+    hydrated = dict(run)
+    hydrated["candidates"] = [
+        hydrate_candidate_evidence(candidate, search)
+        for candidate in run.get("candidates", []) or []
+    ]
+    return hydrated
 
 
 def build_run_record(search, search_result):

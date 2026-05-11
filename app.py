@@ -23,7 +23,7 @@ from src.requirement_agent import analyze_requirement_url
 from src.profile_review_agent import analyze_profile_text
 from src.resume_review_agent import analyze_resume_text
 from src.resume_text_extractor import extract_resume_text
-from src.web_search import build_run_record, build_web_search_request
+from src.web_search import build_run_record, build_web_search_request, hydrate_run_candidate_evidence
 
 load_dotenv()
 
@@ -181,8 +181,16 @@ def build_benchmark_summary(run):
         "search_depth": search_strategy.get("search_depth") or search.get("search_depth", ""),
         "candidate_count": len(run.get("candidates", []) or []),
         "duration_seconds": float(run.get("duration_seconds", 0) or 0),
-        "executed_query_count": int(search_strategy.get("executed_query_count") or run.get("queries_count", 0) or 0),
+        "executed_query_count": int(
+            search_strategy.get("executed_search_query_count")
+            or search_strategy.get("executed_query_count")
+            or run.get("queries_count", 0)
+            or 0
+        ),
         "planned_query_count": int(search_strategy.get("planned_query_count", 0) or 0),
+        "planned_call_cap": int(search_strategy.get("planned_call_cap", 0) or 0),
+        "call_cap_applied": bool(search_strategy.get("call_cap_applied")),
+        "stop_reason": search_strategy.get("stop_reason", ""),
         "base_query_count": int(search_strategy.get("base_query_count", 0) or 0),
         "completed_wave_count": int(adaptive_waves.get("completed_wave_count", 0) or 0),
         "dynamic_action": dynamic_selection.get("action", ""),
@@ -234,7 +242,7 @@ def get_search(run_id):
     run = load_run(RUNS_DIR, run_id)
     if not run:
         return jsonify({"error": "Search run not found"}), 404
-    return jsonify(run)
+    return jsonify(hydrate_run_candidate_evidence(run))
 
 
 @app.post("/api/search")

@@ -103,6 +103,7 @@ def summarize_search_strategy(search_input, queries):
         "location_policy": search_input.get("location_policy", "strict"),
         "sources": compacted.get("source_sites", []),
         "providers": providers,
+        "query_wave_types": search_input.get("query_wave_types", []),
         "query_count": len(queries),
         "sample_queries": [item.get("query", "") for item in queries[:5]],
         "sample_provider_queries": [

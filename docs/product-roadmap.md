@@ -143,7 +143,7 @@ Current implementation:
 - Query length is kept under Tavily limits.
 - Tavily errors now return readable JSON messages.
 - Search strategy preview is shown before search for both manual and vacancy-assisted searches.
-- Role is treated as the required primary title term, and role variants are grouped as OR alternatives where query length allows.
+- Role is no longer intended to be treated only as a required title term. The next planner iteration should use evidence-first query waves: function evidence, tool/vendor evidence, domain evidence, and location evidence, with title-focused queries kept as a smaller precision lane.
 - Search strategy preview now uses "planned searches" language instead of unclear "base queries".
 - `Remote + Country/City` inputs are reduced to the concrete country/city in outgoing search queries, while strict location filtering remains active.
 - Generic Tavily boosters such as `profile`, `resume`, `cv`, `frontend`, and `candidate` were removed because they narrowed or polluted searches.
@@ -157,8 +157,9 @@ Current implementation:
 - Search Strategy Preview now includes search depth, provider list, base query count, provider-pass count, and sample provider queries.
 - Search Depth UI added: Standard, Medium, Extended, and Max.
 - Max search depth now uses deeper API pagination for paginated providers: up to 10 pages for Bing / SerpApi, Google / SerpApi, and Google / Serper.
-- Adaptive search waves are implemented for 100/200-candidate searches: wave 1 runs focused groups, wave 2 runs alternate groups, and wave 3 runs broader discovery groups for 200-candidate searches if the requested limit is still not filled.
-- Dynamic adaptive-wave reranking is implemented as a first intelligence layer: when search reaches Wave 2, the remaining query plan is reordered using Wave 1 query-group unique lift and provider lift.
+- Adaptive search waves are implemented for 100/200-candidate searches. Next iteration: Standard, Medium, and Extended should run Evidence Core followed by a small Title Focus precision wave. Max should run Evidence Core, then Title Focus, then Evidence Expansion only if the requested candidate target has not been reached.
+- Dynamic adaptive-wave reranking is implemented as a first intelligence layer: when search reaches later waves, the remaining query plan is reordered using completed-wave query-group unique lift and provider lift.
+- Max stopping policy should be explicit and budget-safe: stop when `accepted_candidates >= selected_result_limit`, or when `executed_calls >= planned_call_cap`, or when all planned waves/pages are exhausted. Max must not run open-ended searches.
 - Role presets now cover more non-developer sourcing cases: Business Analysis, Data / BI Analytics, Product / Project Management, Architecture / Leadership, and UX / Product Design. These groups also have backend/frontend semantic families and query groups, not only dropdown labels.
 - The run stores `search_strategy`.
 - The sourcing project stores the latest `search_strategy`.
@@ -168,7 +169,8 @@ Remaining work:
 - Explain recall vs precision tradeoffs.
 - Allow the human to approve or edit query groups before running search.
 - Add provider-level explainability: raw results, strict-location filtered results, deduped contribution, and unique candidate lift per provider.
-- Add the next adaptive wave intelligence layer: skip weak groups or replace them with alternates from the same semantic family, rather than only reranking the remaining plan.
+- Tune the conservative adaptive replacement layer on real searches: weak early signals can replace low-ranked later groups with semantic-family alternates, but groups are not skipped outright.
+- Implement the evidence-first query planner: Evidence Core should become the default first wave, Title Focus should become a smaller second precision wave, and Evidence Expansion should be reserved for Max or explicit high-recall runs.
 - Improve query planner clarity further after testing real searches.
 
 ### Phase 4: Candidate Search
@@ -196,7 +198,8 @@ Current implementation:
 - Deep-result pagination is implemented through provider APIs, not browser automation. For 200-candidate Max searches, the planner can schedule up to 10 pages for each paginated provider.
 - Provider failures inside a multi-provider run are captured as provider warnings instead of failing the whole search when another provider can still return results.
 - Candidate records now retain the search provider that found them, so the UI can show where a profile came from.
-- `.env.example` documents `SERPAPI_API_KEY`, `SERPER_API_KEY`, `TAVILY_API_KEY`, location verification settings, and OpenAI settings.
+- Candidate table Role and Stack now display profile evidence extracted from indexed title/snippet text, not the original search request. Query role/stack context is preserved separately in candidate details for audit.
+- `.env.example` documents `SERPAPI_API_KEY`, `SERPER_API_KEY`, `TAVILY_API_KEY`, `SEARCH_MAX_EXECUTED_CALL_CAP`, location verification settings, and OpenAI settings.
 - Provider diagnostics are stored in `search_strategy.result_diagnostics` for analysis, including raw rows, quality rows, accepted rows, strict-location rejects, verification attempts, and provider breakdowns.
 - Detailed diagnostics are hidden from the main results UI by default so the recruiter sees a cleaner candidate table, while the run JSON remains auditable.
 - Added recruiter-friendly Search Explanation UX after each run. It summarizes what was searched, candidate fill, elapsed time, executed vs planned provider calls, strict-location filtering, top contributing providers, top query groups, and adaptive-wave behavior.
@@ -204,6 +207,13 @@ Current implementation:
 - A compact Provider Contribution Report is now shown after each search and can be exported to CSV. It summarizes raw rows, strict-location rejects, accepted rows, final unique candidates, dedupe/cap loss, executed calls, and warnings per provider.
 - Adaptive wave diagnostics are stored in `search_strategy.adaptive_waves` and shown inside the contribution report, including which waves ran, calls per wave, raw rows, accepted rows, and unique candidates after each wave.
 - Dynamic wave selection is stored in `search_strategy.adaptive_waves.dynamic_selection` and shown in the adaptive-wave report. The first slice reranks remaining Wave 2/3 calls using Wave 1 productive/weak query groups and provider lift.
+- The second adaptive-intelligence slice is implemented as conservative replace-only logic. When completed waves show weak groups, low-ranked later groups can be replaced by unused alternates from the same semantic family; the system records `replacement_groups` in `dynamic_selection` and does not skip groups outright.
+- Energy / ETRM Business Analyst now has grouped-anchor alternates such as CTRM / commodity trading, Middle Office / risk management, trading systems / Endur, trade capture / energy trading, RightAngle / Allegro, Openlink / commodity risk, natural gas / power trading, crude oil / refined products, scheduling / settlements, and commodity risk / energy risk.
+- Gap analysis from manually reviewed Houston Front Office / ETRM candidates showed that title-first search missed strong profiles whose public evidence used `Consultant`, `SME`, `Lead`, `Architect`, `Developer`, `Support Engineer`, `Trading Systems`, `Trade Capture`, `OpenLink`, `RightAngle`, or `Allegro` instead of exact `Business Analyst` + `Front Office`. Planned fix: move from title-first to evidence-first planning.
+- Planned wave model: Evidence Core = high-precision role/function + tool/domain + strict location; Title Focus = narrow exact-title precision lane; Evidence Expansion = consultant/SME/lead/architect/developer/support-engineer + tool/domain + strict location, enabled in Max only when still below target.
+- Standard, Medium, and Extended now include Evidence Core and Title Focus. Max includes Evidence Core, Title Focus, and Evidence Expansion, with early stop at selected result limit or planned call cap.
+- Max runs now keep a budgeted provider-call cap separate from the full page/depth plan. Search stops explicitly at target reached, call cap reached, or plan exhausted, and stores the stop reason in `search_strategy`.
+- Evidence Expansion now has an audit summary in `search_strategy.adaptive_waves.evidence_expansion`, so Technical reports show whether the high-recall wave ran, partially ran, or was skipped because target/cap stopped the run.
 - Query-group contribution diagnostics are stored in `search_strategy.query_group_contribution_report` and shown inside the contribution report, including calls, raw rows, accepted rows, final unique candidates, dedupe/cap loss, sample query, and provider lift by group.
 - Search runs store the actual executed provider queries, including page/start/first offsets, so we can audit what was sent after early stopping.
 - Hybrid role presets and editable role variants are implemented.
@@ -223,8 +233,8 @@ Remaining work:
 - Add a short "why not filled" explanation when final candidates are below the requested limit, for example Standard depth only used Tavily, strict location removed many rows, or too few query groups produced unique lift.
 - Add next-action suggestions in the Search Explanation card, for example try Extended/Max depth, broaden role signals, or add another location only when the diagnostics support that advice.
 - Use the new query-group contribution report in real benchmark runs and tune group ordering/selection.
-- Benchmark adaptive waves on 100/200-candidate searches and tune the wave split if real runs show too little unique lift.
-- Add a second adaptive-wave layer that can skip weak groups or replace them with alternates from the same semantic family.
+- Benchmark the new evidence-first wave split on 100/200-candidate searches: Evidence Core first, Title Focus second, Evidence Expansion only in Max if the target is not filled.
+- Tune the second adaptive-wave replacement layer on real 100/200-candidate searches so replacements improve unique lift without reducing recall.
 - Add a Projects UI so users can browse projects directly, not only search history.
 - Decide whether Render production should use persistent disk/database instead of local JSON for long-term storage.
 
@@ -529,10 +539,11 @@ Recommended next build order:
 21. Done first slice: Expand role presets and semantic query families beyond engineering into analysts, managers, architects, and product/design roles.
 22. Done first slice: Add query-group contribution reporting with unique lift, accepted rows, provider lift, and CSV export.
 23. Done first slice: Use Wave 1 query-group unique lift and provider lift to rerank the remaining adaptive wave plan.
-24. Next search-engine slice: Let adaptive waves skip weak groups or replace them with semantic-family alternates.
-25. Later: Add decision memory across profile and resume review.
-26. Later: Add conversational sourcing copilot on top of stable workflow actions.
-27. Backlog: Add candidate communication tracking after the core review workflow is stable.
+24. Done first slice: Let adaptive waves replace weak groups with semantic-family alternates, without aggressive skip logic.
+25. Planned next: Replace title-first wave planning with evidence-first planning. Standard/Medium/Extended should run Evidence Core then Title Focus. Max should add Evidence Expansion only until target or planned call cap.
+26. Later: Add decision memory across profile and resume review.
+27. Later: Add conversational sourcing copilot on top of stable workflow actions.
+28. Backlog: Add candidate communication tracking after the core review workflow is stable.
 
 ## Current Decision
 
@@ -602,6 +613,7 @@ Completed:
 - Experimental provider options that did not yet prove useful are hidden from the main Search Depth UI.
 - Search Strategy Preview now shows provider list, base query count, provider-pass count, and provider-tagged sample queries.
 - Candidate detail UI now shows which search provider found the candidate.
+- Candidate table Role/Stack now show what was actually found in the indexed profile evidence, with `N/A` when no role/stack evidence is extractable; matched query context remains visible in details.
 - Multi-provider search now records provider warnings without failing the whole run when other providers succeed.
 - Provider warning classification now distinguishes credits/quota, rate limit, auth/access, missing configuration, and generic API errors.
 - Strict location filtering now treats query text alone as insufficient evidence.
@@ -610,7 +622,21 @@ Completed:
 - Provider Contribution Report now surfaces compact per-provider raw rows, strict-location rejects, accepted rows, final unique candidates, dedupe/cap loss, executed calls, and CSV export.
 - Query Group Contribution Report now surfaces per-group calls, raw rows, accepted rows, final unique lift, dedupe/cap loss, provider lift, sample query, and CSV export.
 - Adaptive search waves now run for 100/200-candidate searches and record per-wave diagnostics.
-- Adaptive waves now rerank the remaining Wave 2/3 plan when Wave 1 has enough signal, using productive/weak query groups and provider lift.
+- Adaptive waves now rerank the remaining Wave 2/3 plan at later wave boundaries when completed waves have enough signal, using productive/weak query groups and provider lift.
+- Adaptive waves now have a conservative replace-only layer: weak completed-wave signals can swap low-ranked later query groups for unused semantic-family alternates, with replacement audit shown in Technical reports.
+- Energy / ETRM grouped-anchor searches now expose unique query-group labels and alternate grouped anchors for replacement tuning.
+- Added manual gap-analysis docs for Houston Front Office / ETRM searches:
+  - `docs/photo-only-gap-analysis-front-office-power-ba.md`
+  - `docs/top30-photo-only-evidence-pattern-analysis.md`
+- Product decision: move the query planner toward evidence-first waves. Standard/Medium/Extended should run Evidence Core plus Title Focus. Max should run Evidence Core, Title Focus, and Evidence Expansion, stopping at selected target, planned call cap, or exhausted plan.
+- Evidence-first implementation step 1 completed: query groups, executed queries, adaptive wave summaries, candidate details, and query-group reports now carry explicit `wave_type` / `wave_type_label` metadata. Current legacy queries are correctly labeled as `title_focus` until Evidence Core and Evidence Expansion query generation is added.
+- Evidence-first implementation step 2 completed: Energy / ETRM grouped-anchor searches now have explicit Evidence Core and Evidence Expansion query groups for BA/function evidence, vendor/tool evidence, domain evidence, and consultant/SME/lead/developer evidence. The backend can generate these waves via `query_wave_types` without changing default search-depth behavior until the mapping step lands.
+- Evidence-first implementation step 3 completed: Search Depth now maps Energy / ETRM grouped-anchor searches to evidence-first waves. Standard, Medium, and Extended plan Evidence Core then Title Focus. Max plans Evidence Core, Title Focus, then Evidence Expansion, with later waves naturally skipped once the selected result target is filled.
+- Product decision: evidence-first should become a general pattern for every Role Group, not only Energy / ETRM. Each role family should eventually have generic Evidence Core, Title Focus, and Evidence Expansion groups built from role/function evidence, stack/tool evidence, domain evidence, and strict location. Energy / ETRM is the first specialized evidence pattern; similar specialized patterns should be added to other role families as domain knowledge is supplied by the owner.
+- Evidence-first implementation step 4 completed: non-Energy semantic Role Groups now use a generic evidence builder. Generic Evidence Core combines family core terms, family role/function terms, active stack/tool groups, and strict location; generic Title Focus uses exact user-provided titles/variants plus stack/tool groups; generic Evidence Expansion uses broader role/function alternates plus alternate stack groups. Energy / ETRM remains the first specialized evidence pattern.
+- Evidence-first implementation step 5 completed: Max runs now stop explicitly at selected target, planned call cap, or exhausted plan. The backend stores `stop_reason`, `planned_call_cap`, `budgeted_query_count`, `executed_search_query_count`, and separate verification query counts.
+- Evidence-first reporting step completed: Search Explanation and Technical reports now show budgeted vs full planned provider calls, stop reason, adaptive wave statuses, and whether Evidence Expansion ran, partially ran, or was skipped.
+- Evidence-first local verification completed: Python compile checks and frontend syntax checks pass after the wave model, generic evidence builder, Max call-cap, and report updates.
 - Captured first large-search timing benchmark: Data Analyst, Poland, Max depth, 200 candidates completed in 996.55 seconds, about 16 minutes 37 seconds, with 203 executed provider queries out of 372 planned.
 - Search progress now shows elapsed time, approximate remaining time, and a more realistic large-search estimate instead of sitting silently at 87%.
 - Captured second large-search benchmark: QA Automation Engineer, Poland, Max depth, 200 candidates completed in 438.27 seconds, about 7 minutes 18 seconds, with 90 executed provider queries out of 372 planned.
@@ -627,14 +653,65 @@ In progress:
 - Next provider evaluation shortlist: SearchAPI.io and Exa.
 - Strict location filtering and UX validation on real Houston searches.
 - Provider-quality benchmarking across Standard, Medium, Extended, and Max search depths.
-- High-recall search planning for 100/200-candidate runs, including real-run adaptive wave tuning.
-- Adaptive-wave intelligence validation on real 100/200-candidate searches, including whether reranking improves unique lift.
+- High-recall search planning for 100/200-candidate runs, including evidence-first wave tuning and Max budget caps. Implementation is in place; next step is real-run validation.
+- Adaptive-wave intelligence validation on real 100/200-candidate searches, including whether reranking and conservative replacement improve unique lift.
 - Resume review UX.
 - Frontend simplification so the left panel stays usable as the workflow grows.
 
 Next recommended product step:
 
 - Run side-by-side benchmarks for Standard, Medium, Extended, and Max on the same requirement. Use the Provider Contribution Report, saved diagnostics, and executed-query audits to compare actual provider contribution, not just planned query counts.
-- Benchmark adaptive waves on 100/200-candidate searches and tune wave sizing using Provider + Query Group Contribution Report output.
-- Benchmark dynamic Wave 2/3 reranking and design the next adaptive layer: skip weak groups or replace them with semantic-family alternates.
+- Run the first real evidence-first validation search on May 13, 2026: use a known hard role/location case, preferably Houston Front Office / ETRM, at Max depth with 200 target candidates.
+- Generalize evidence-first query generation across all Role Groups, while keeping Energy / ETRM as the first specialized evidence pattern. Add specialized patterns family-by-family as owner-provided recruiting/domain knowledge arrives.
+- Benchmark Max early-stop behavior against selected target and planned call cap so high-recall searches remain credit-safe.
+- After the validation run, inspect Technical reports for provider lift, query-group lift, strict-location rejects, stop reason, and whether Evidence Expansion ran or was skipped.
+- Benchmark dynamic reranking and conservative replacement after the evidence-first wave split lands.
 - Test the next provider shortlist with the same X-Ray query set and compare raw LinkedIn URLs, strict-location survivors, deduped candidates, cost, and pagination behavior.
+
+## Next Implementation Plan: Evidence-first Search Waves
+
+Estimated time for first useful implementation: 2-4 hours.
+
+Production-clean version with broader tests and polished reporting: about half a day.
+
+Goal:
+
+- Replace the current title-first search behavior with an evidence-first wave plan.
+- Make evidence-first the general query planning model for all Role Groups, with role-specific specialized evidence patterns added over time.
+- Keep the existing provider pipeline, strict location filtering, dedupe, scoring, and result UI.
+- Avoid silent credit overuse by making Max stop at target, planned call cap, or exhausted plan.
+
+Implementation steps:
+
+1. Query planner wave model, about 30-45 minutes. Completed.
+   Added explicit wave types: `evidence_core`, `title_focus`, and `evidence_expansion`.
+
+2. Energy / ETRM evidence patterns, about 45-75 minutes. Completed.
+   Added query groups for BA/function evidence, vendor/tool evidence, domain evidence, and high-recall consultant/SME/lead/developer evidence.
+
+3. Search-depth mapping, about 30-45 minutes. Completed.
+   Standard, Medium, and Extended now run Evidence Core followed by Title Focus. Max now runs Evidence Core, Title Focus, and Evidence Expansion only if the target is not yet filled.
+
+4. General evidence pattern for all Role Groups, about 60-120 minutes. Completed.
+   Added a generic evidence builder so non-Energy families also get Evidence Core, Title Focus, and Evidence Expansion. Energy / ETRM remains the first specialized evidence pattern, and additional specialized patterns will be added as owner knowledge is supplied.
+
+5. Max stop conditions, about 20-30 minutes. Completed.
+   Stops when `accepted_candidates >= selected_result_limit`, primary search calls reach `planned_call_cap`, or all planned waves/pages are exhausted. Location verification calls remain tracked separately.
+
+6. Audit/report updates, about 30-45 minutes. Completed.
+   Search Explanation and Technical reports show wave labels, planned calls, budgeted calls, executed calls, stop reason, and whether Evidence Expansion ran or was skipped.
+
+7. Local verification, about 20-40 minutes. Completed.
+   Python compile checks, frontend syntax checks, and dry-run query-plan inspection pass before spending search provider credits.
+
+8. Real validation run, planned for May 13, 2026.
+   Run a hard 200-candidate Max search, then inspect Search Explanation, Provider Contribution Report, Query Group Contribution Report, Adaptive Waves, executed queries, stop reason, and Evidence Expansion status.
+
+First-version acceptance criteria:
+
+- Houston Front Office / ETRM search preview shows Evidence Core and Title Focus in Standard/Medium/Extended.
+- Max preview shows Evidence Core, Title Focus, and conditional Evidence Expansion.
+- Generated sample queries include terms such as `ETRM`, `CTRM`, `Endur`, `OpenLink`, `RightAngle`, `Allegro`, `Trade Capture`, `Trading Systems`, `Business Analyst`, `BA`, `Consultant`, `SME`, `Lead`, `Architect`, and `Developer` where appropriate.
+- Max reports target/call-cap/exhausted-plan stop behavior.
+- Existing Java/QA/Data family searches still generate valid query plans and do not break.
+- Java/QA/Data/Product/etc. Role Groups use the general evidence-first pattern, while specialized family patterns can override/enrich the generic groups when we have better domain knowledge.

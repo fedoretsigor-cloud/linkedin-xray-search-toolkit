@@ -25,6 +25,87 @@ ROLE_FAMILIES = [
         "fixed_anchors": ["Front Office"],
         "domain_terms": ["Power Trading", "Energy Trading", "ETRM"],
         "tool_terms": ["Orchestrade", "Endur"],
+        "evidence_query_groups": [
+            {
+                "wave_type": "evidence_core",
+                "label": "BA/function + ETRM tools",
+                "or_groups": [
+                    ["Business Analyst", "BA", "Business Systems Analyst", "Technical Business Analyst"],
+                    ["ETRM", "CTRM", "Endur", "OpenLink", "RightAngle", "Allegro"],
+                ],
+            },
+            {
+                "wave_type": "evidence_core",
+                "label": "BA/function + trading domain",
+                "or_groups": [
+                    ["Business Analyst", "BA", "business analysis", "requirements", "UAT"],
+                    ["Energy Trading", "Power Trading", "Gas Trading", "Commodities", "LNG"],
+                ],
+            },
+            {
+                "wave_type": "evidence_core",
+                "label": "Trade capture/systems + BA/function",
+                "or_groups": [
+                    ["Trade Capture", "Trading Systems", "Front Office", "Front-Office Trading Desk"],
+                    ["Business Analyst", "BA", "Implementation", "Product Delivery"],
+                    ["Endur", "OpenLink", "ETRM"],
+                ],
+            },
+            {
+                "wave_type": "evidence_core",
+                "label": "Architecture/functional BA + ETRM",
+                "or_groups": [
+                    ["Business Analyst", "Business Architecture", "Solution Architecture", "Functional Analyst"],
+                    ["ETRM", "CTRM", "Endur", "RightAngle"],
+                ],
+            },
+            {
+                "wave_type": "evidence_expansion",
+                "label": "Consultant/SME + ETRM tools",
+                "or_groups": [
+                    ["Consultant", "SME", "Specialist", "Functional Consultant", "Implementation Consultant"],
+                    ["ETRM", "CTRM", "Endur", "OpenLink", "RightAngle", "Allegro"],
+                ],
+            },
+            {
+                "wave_type": "evidence_expansion",
+                "label": "Developer/architect/support + trading tools",
+                "or_groups": [
+                    ["Developer", "Architect", "Support Engineer", "Technical Lead", "Functional Lead"],
+                    ["Endur", "OpenLink", "RightAngle", "Allegro", "CTRM"],
+                ],
+            },
+            {
+                "wave_type": "evidence_expansion",
+                "label": "Trading systems + energy domain",
+                "or_groups": [
+                    ["Trading Systems", "Trade Capture", "Commercial Applications", "Energy Solutions"],
+                    ["Energy Trading", "Power Trading", "Gas Trading", "Commodities"],
+                ],
+            },
+            {
+                "wave_type": "evidence_expansion",
+                "label": "Risk/settlements/scheduling + energy trading",
+                "or_groups": [
+                    ["Market Risk", "Credit Risk", "Portfolio Risk", "Settlements", "Gas Scheduling"],
+                    ["Energy", "Trading", "Commodities", "Power", "Gas"],
+                ],
+            },
+        ],
+        "grouped_anchor_alternates": [
+            ["Front Office", "CTRM", "commodity trading"],
+            ["Middle Office", "ETRM", "risk management"],
+            ["trading systems", "Endur"],
+            ["trade capture", "energy trading"],
+            ["RightAngle", "Allegro"],
+            ["Openlink", "commodity risk"],
+            ["natural gas", "power trading"],
+            ["crude oil", "refined products"],
+            ["scheduling", "settlements"],
+            ["trading systems", "implementation"],
+            ["commodity risk", "energy risk"],
+            ["energy trading", "commodities"],
+        ],
     },
     {
         "family": "Business Analysis",
@@ -189,6 +270,8 @@ def build_role_pattern(role, role_variants=None, context=None):
             "fixed_anchors": family.get("fixed_anchors", []),
             "domain_terms": family.get("domain_terms", []),
             "tool_terms": family.get("tool_terms", []),
+            "evidence_query_groups": family.get("evidence_query_groups", []),
+            "grouped_anchor_alternates": family.get("grouped_anchor_alternates", []),
             "title_pattern": title_pattern,
             "fallback_role": role,
             "fallback_role_variants": role_variants,
@@ -205,6 +288,8 @@ def build_role_pattern(role, role_variants=None, context=None):
         "fixed_anchors": [],
         "domain_terms": [],
         "tool_terms": [],
+        "evidence_query_groups": [],
+        "grouped_anchor_alternates": [],
         "title_pattern": build_title_pattern(role, role_variants),
         "fallback_role": role,
         "fallback_role_variants": role_variants,

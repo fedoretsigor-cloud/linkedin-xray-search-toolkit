@@ -244,13 +244,14 @@ Owner concern:
 - If the user selects 200 candidates, the system should make a serious attempt to return close to 200.
 - The owner is willing to run more provider requests if that materially improves unique candidate count.
 
-Current status: First adaptive wave slice implemented; real-run tuning remains.
+Current status: First adaptive wave slice implemented; real-run tuning remains. The next planner iteration is evidence-first rather than title-first.
 
 Decision:
 
 - Do not repeat identical queries multiple times; repeated identical requests are likely to return duplicate results after dedupe.
 - Do not restore generic boosters like `profile`, `resume`, `cv`, `frontend`, or `candidate`.
 - Increase recall through more meaningful role-family query groups.
+- Do not rely on exact public titles as the main discovery mechanism. A candidate can have `Consultant`, `SME`, `Lead`, `Developer`, or `Architect` in the headline while the profile evidence still proves business-analysis or front-office/ETRM relevance.
 - If the first wave still returns too few unique candidates, later waves use different search angles, not the same queries again.
 - Use provider API pagination for deep search instead of browser-based Google UI pagination.
 - Keep noisy or unproven providers out of the main Search Depth UI until they prove unique lift in benchmarks.
@@ -268,9 +269,15 @@ Implementation note:
 - Before final dedupe/cap, Google / Serper had the largest accepted-row pool in that run, so no current Max provider should be removed yet.
 - Provider diagnostics are stored in run JSON for analysis, but the noisy diagnostics cards are hidden from the main UI.
 - Provider Contribution Report is now visible after each search and exportable to CSV. It shows raw rows, strict-location rejects, accepted rows, final unique candidates, dedupe/cap loss, executed calls, and warnings per provider.
-- Adaptive waves are now implemented for 100/200-candidate searches: wave 1 focused groups, wave 2 alternate role/skill groups, wave 3 broader discovery groups for 200-candidate searches if still below target.
+- Adaptive waves are now implemented for 100/200-candidate searches. Planned next wave model: Standard, Medium, and Extended run Evidence Core followed by Title Focus; Max runs Evidence Core, then Title Focus, then Evidence Expansion only if the requested candidate target has not been reached.
+- Evidence Core means high-precision role/function + tool/domain + strict location evidence. Example: `("Business Analyst" OR BA OR "Business/Technical Analysis") (ETRM OR CTRM OR Endur OR OpenLink OR RightAngle OR Allegro) Houston`.
+- Title Focus is a smaller precision lane, not the main discovery engine. Example: `"Business Analyst" "Front Office" "Endur" Houston`.
+- Evidence Expansion is a high-recall Max-only lane for adjacent strong profiles. Example: `(Consultant OR SME OR Specialist OR Lead OR Architect OR Developer OR "Support Engineer") (ETRM OR CTRM OR Endur OR OpenLink OR RightAngle OR Allegro) Houston`.
+- Max should stop when the selected result limit is reached, when the planned call cap is reached, or when all planned waves/pages are exhausted. Max should not run open-ended searches.
 - Query Group Contribution Report is now visible inside the contribution report and exportable to CSV. It shows which semantic query groups produced raw rows, accepted rows, final unique candidates, dedupe/cap loss, provider lift, and sample queries.
-- The first adaptive-intelligence layer is implemented: when a large search reaches Wave 2, the remaining Wave 2/3 plan is reranked using Wave 1 productive groups, weak groups, and provider lift.
+- The first adaptive-intelligence layer is implemented: when a large search reaches later waves, the remaining plan is reranked using completed-wave productive groups, weak groups, and provider lift.
+- The second adaptive-intelligence slice is implemented as conservative replace-only logic: weak completed-wave signals can replace low-ranked later groups with unused alternates from the same semantic family, and the replacement audit is stored in `dynamic_selection.replacement_groups`.
+- Energy / ETRM Business Analyst now has grouped-anchor alternates, so replacement can work for this family too rather than only for ordinary skill-group families.
 - Benchmark captured on 2026-05-11: Data Analyst, Poland, Max depth, 200 candidates returned 200 candidates in 996.55 seconds, about 16 minutes 37 seconds, with 203 executed provider queries out of 372 planned.
 - Progress UX now uses this large-search benchmark to show elapsed time, approximate remaining time, and a more honest long-running message near the spinner.
 - Benchmark captured on 2026-05-11: QA Automation Engineer, Poland, Max depth, 200 candidates returned 200 candidates in 438.27 seconds, about 7 minutes 18 seconds, with 90 executed provider queries out of 372 planned.
@@ -279,13 +286,15 @@ Implementation note:
 - Benchmark Summary filters were added for all runs, same role family, same location, and Max 200 runs; CSV export follows the selected filter.
 - Search Explanation UX now shows a short recruiter-facing summary after each run: what was searched, how many candidates were filled, how long it took, how strict location behaved, which providers delivered unique candidates, and which query groups worked.
 - The detailed Provider Contribution Report, Query Group Report, Adaptive Waves, and Benchmark Summary are still available, but are collapsed under `Technical reports` by default.
+- Candidate table Role/Stack now use extracted profile evidence from indexed title/snippet text instead of echoing the search request. If no role or stack evidence is found, the table shows `N/A`; the original matched query context remains in candidate details for audit.
 - Next UX improvement: if a run returns fewer candidates than requested, explain the likely reason in plain language and suggest the next search action only when diagnostics support it.
 
 Planned next adaptive layer:
 
-- Benchmark whether dynamic Wave 2/3 reranking improves unique lift on real 100/200-candidate searches.
-- Add a second adaptive layer that can skip weak groups or replace them with alternate groups from the same semantic family.
-- Keep skip/replace behind benchmark evidence, so we do not overfit the planner without real search data.
+- Implement the evidence-first wave split and benchmark it on real 100/200-candidate searches.
+- Benchmark whether dynamic Wave 2/3 reranking improves unique lift after the Evidence Core / Title Focus / Evidence Expansion split.
+- Tune the second adaptive layer on real 100/200-candidate searches.
+- Keep replacement conservative and benchmark-backed, so we do not overfit the planner or reduce recall without real search data.
 
 Next provider evaluation shortlist:
 

@@ -196,6 +196,105 @@ FAMILY_DEFAULT_GROUPS = {
     ],
 }
 
+FAMILY_ALTERNATE_GROUPS = {
+    "Java Backend": [
+        ["event-driven architecture", "Kafka"],
+        ["high-load systems", "performance"],
+        ["clean architecture", "DDD"],
+        ["OAuth", "security"],
+    ],
+    "QA Automation": [
+        ["Allure", "test reporting"],
+        ["Postman", "API automation"],
+        ["performance testing", "JMeter"],
+        ["mobile testing", "Appium"],
+    ],
+    "Business Analysis": [
+        ["BRD", "FRD"],
+        ["gap analysis", "impact analysis"],
+        ["wireframes", "prototyping"],
+        ["change management", "training"],
+    ],
+    "Frontend": [
+        ["design systems", "component library"],
+        ["accessibility", "WCAG"],
+        ["performance optimization", "web vitals"],
+        ["Storybook", "UI testing"],
+    ],
+    "Fullstack": [
+        ["microservices", "REST API"],
+        ["serverless", "AWS Lambda"],
+        ["GraphQL", "Apollo"],
+        ["authentication", "OAuth"],
+    ],
+    "iOS": [
+        ["MVVM", "VIPER"],
+        ["REST API", "GraphQL"],
+        ["unit testing", "XCTest"],
+        ["CI/CD", "Fastlane"],
+    ],
+    "Android": [
+        ["MVVM", "Clean Architecture"],
+        ["Room", "SQLite"],
+        ["unit testing", "Espresso"],
+        ["CI/CD", "Fastlane"],
+    ],
+    "DevOps / SRE": [
+        ["AWS EKS", "Kubernetes"],
+        ["incident response", "on-call"],
+        ["Ansible", "configuration management"],
+        ["OpenTelemetry", "tracing"],
+    ],
+    "Data Engineer": [
+        ["data warehouse", "ELT"],
+        ["lakehouse", "Delta Lake"],
+        ["data quality", "Great Expectations"],
+        ["orchestration", "Dagster"],
+    ],
+    "Data / BI Analytics": [
+        ["LookML", "semantic layer"],
+        ["customer analytics", "retention"],
+        ["cohort analysis", "funnel analysis"],
+        ["data storytelling", "insights"],
+    ],
+    "ML / AI Engineer": [
+        ["RAG", "retrieval augmented generation"],
+        ["LangChain", "LlamaIndex"],
+        ["feature engineering", "model training"],
+        ["model monitoring", "drift"],
+    ],
+    "Product Management": [
+        ["pricing", "monetization"],
+        ["customer discovery", "interviews"],
+        ["OKR", "prioritization"],
+        ["platform product", "API product"],
+    ],
+    "Project / Delivery Management": [
+        ["release management", "delivery planning"],
+        ["stakeholder reporting", "status reports"],
+        ["scope management", "change requests"],
+        ["cross-functional teams", "coordination"],
+    ],
+    "Architecture / Leadership": [
+        ["system design", "architecture review"],
+        ["technical strategy", "engineering roadmap"],
+        ["modernization", "legacy migration"],
+        ["architecture governance", "standards"],
+    ],
+    "UX / Product Design": [
+        ["service design", "blueprints"],
+        ["UX audit", "heuristic evaluation"],
+        ["research synthesis", "insights"],
+        ["visual design", "brand systems"],
+    ],
+    "Embedded": [
+        ["bootloader", "device drivers"],
+        ["safety critical", "ISO 26262"],
+        ["testing", "debugging tools"],
+        ["sensors", "communication protocols"],
+    ],
+}
+
 
 def desired_group_count(target_count):
     try:
@@ -215,6 +314,10 @@ def desired_group_count(target_count):
 
 
 def expand_skill_groups(skill_groups, role_pattern=None, target_count=20):
+    return build_skill_group_plan(skill_groups, role_pattern, target_count)["active_groups"]
+
+
+def build_skill_group_plan(skill_groups, role_pattern=None, target_count=20):
     desired_count = desired_group_count(target_count)
     expanded = []
 
@@ -222,12 +325,23 @@ def expand_skill_groups(skill_groups, role_pattern=None, target_count=20):
         add_group(expanded, group)
 
     family = (role_pattern or {}).get("family") or ""
-    for group in FAMILY_DEFAULT_GROUPS.get(family, []):
+    family_groups = FAMILY_DEFAULT_GROUPS.get(family, [])
+    for group in family_groups:
         if len(expanded) >= desired_count:
             break
         add_group(expanded, group)
 
-    return expanded[:desired_count] or [[]]
+    active_groups = expanded[:desired_count] or [[]]
+    alternate_groups = []
+    for group in [*family_groups, *FAMILY_ALTERNATE_GROUPS.get(family, [])]:
+        if is_equivalent_or_subset(group, active_groups) or is_equivalent_or_subset(group, alternate_groups):
+            continue
+        add_group(alternate_groups, group)
+
+    return {
+        "active_groups": active_groups,
+        "alternate_groups": alternate_groups,
+    }
 
 
 def add_group(groups, group):
@@ -257,3 +371,13 @@ def is_subset_of_existing_group(group, groups):
         if new_terms and new_terms.issubset(existing_terms):
             return True
     return False
+
+
+def is_equivalent_or_subset(group, groups):
+    cleaned = [clean_text(value) for value in group or [] if clean_text(value)]
+    if not cleaned:
+        return True
+    key = group_key(cleaned)
+    if key in {group_key(existing) for existing in groups}:
+        return True
+    return is_subset_of_existing_group(cleaned, groups)
