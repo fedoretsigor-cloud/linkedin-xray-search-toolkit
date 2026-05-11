@@ -37,6 +37,22 @@ ADAPTIVE_WAVE_LABELS = {
     2: "Alternate groups",
     3: "Broad discovery",
 }
+ADAPTIVE_SELECTION_STOPWORDS = {
+    "and",
+    "api",
+    "cloud",
+    "engineer",
+    "engineering",
+    "for",
+    "in",
+    "linkedin",
+    "or",
+    "profile",
+    "site",
+    "software",
+    "the",
+    "with",
+}
 CREDIT_ERROR_MARKERS = (
     "credit",
     "credits",
@@ -188,6 +204,27 @@ def expand_queries_for_provider(provider, base_queries, requested_count):
     return expanded_queries
 
 
+def build_query_group_label(query_info, index):
+    skill = clean_text(query_info.get("skill_input", ""))
+    title = clean_text(query_info.get("title_input", ""))
+    location = clean_text(query_info.get("location_input", ""))
+    source = clean_text(query_info.get("source_site", ""))
+    label = skill or title or f"Query group {index}"
+    context = " / ".join(value for value in [source, location] if value)
+    return f"{label} ({context})" if context else label
+
+
+def annotate_query_groups(base_queries):
+    annotated = []
+    for index, query_info in enumerate(base_queries or [], start=1):
+        group_info = dict(query_info)
+        group_info["query_group_id"] = group_info.get("query_group_id") or f"group-{index}"
+        group_info["query_group_index"] = int(group_info.get("query_group_index") or index)
+        group_info["query_group_label"] = group_info.get("query_group_label") or build_query_group_label(group_info, index)
+        annotated.append(group_info)
+    return annotated
+
+
 def page_cap_for_provider(provider, search_input, requested_count, page_size):
     if provider not in PAGINATED_PROVIDERS:
         return 1
@@ -330,6 +367,141 @@ def finalize_adaptive_wave_summaries(wave_summaries, final_unique_count, request
     return wave_summaries
 
 
+def tokenize_query_group(query_info):
+    text = " ".join(
+        clean_text(query_info.get(key, ""))
+        for key in ("query_group_label", "skill_input", "title_input", "role_pattern_family")
+    )
+    tokens = []
+    seen = set()
+    for token in re.findall(r"[a-zA-Z0-9+#.]+", text.lower()):
+        if len(token) < 2 or token in ADAPTIVE_SELECTION_STOPWORDS or token in seen:
+            continue
+        seen.add(token)
+        tokens.append(token)
+    return set(tokens)
+
+
+def query_group_similarity(left, right):
+    left_tokens = tokenize_query_group(left)
+    right_tokens = tokenize_query_group(right)
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+
+def unique_rows_by_query_group(rows):
+    return count_items_by_query_group(dedupe_rows(rows or []))
+
+
+def provider_lift_from_rows(rows):
+    return count_items_by_provider(dedupe_rows(rows or []), provider_key="search_provider")
+
+
+def dynamic_query_group_score(query_info, strong_groups, weak_groups, provider_lift):
+    strong_similarity = max([query_group_similarity(query_info, group) for group in strong_groups] or [0.0])
+    weak_similarity = max([query_group_similarity(query_info, group) for group in weak_groups] or [0.0])
+    provider_score = provider_lift.get(query_info.get("provider") or "", 0)
+    return (strong_similarity * 10.0) - (weak_similarity * 4.0) + min(provider_score, 20) / 20.0
+
+
+def build_dynamic_wave_selection(query_plan, start_index, diagnostics, all_rows):
+    remaining_plan = query_plan[start_index:]
+    if not remaining_plan:
+        return None
+
+    by_query_group = diagnostics.get("by_query_group", {}) if isinstance(diagnostics, dict) else {}
+    final_by_group = unique_rows_by_query_group(all_rows)
+    provider_lift = provider_lift_from_rows(all_rows)
+    seen_groups = {}
+    for query_info in query_plan[:start_index]:
+        if query_info.get("query_type") == "location_verification":
+            continue
+        group_id = query_info.get("query_group_id") or "unknown"
+        seen_groups[group_id] = query_info
+
+    strong_groups = []
+    weak_groups = []
+    group_summaries = []
+    for group_id, query_info in seen_groups.items():
+        stats = by_query_group.get(group_id, {})
+        final_count = int(final_by_group.get(group_id, 0) or 0)
+        accepted_count = int(stats.get("accepted_rows", 0) or 0)
+        summary = {
+            "query_group_id": group_id,
+            "query_group_label": query_info.get("query_group_label") or group_id,
+            "accepted_rows": accepted_count,
+            "final_candidates": final_count,
+        }
+        group_summaries.append(summary)
+        if final_count > 0:
+            strong_groups.append(query_info)
+        elif accepted_count == 0:
+            weak_groups.append(query_info)
+
+    if not strong_groups and not weak_groups:
+        return None
+
+    ranked_remaining = []
+    for query_info in remaining_plan:
+        score = dynamic_query_group_score(query_info, strong_groups, weak_groups, provider_lift)
+        ranked_remaining.append(
+            {
+                "query_group_id": query_info.get("query_group_id") or "unknown",
+                "query_group_label": query_info.get("query_group_label") or query_info.get("skill_input", ""),
+                "adaptive_wave": int(query_info.get("adaptive_wave", 1) or 1),
+                "provider": query_info.get("provider", ""),
+                "page": int(query_info.get("page", 1) or 1),
+                "score": round(score, 4),
+            }
+        )
+
+    ranked_remaining.sort(key=lambda item: (item["adaptive_wave"], -item["score"], item["page"], item["provider"]))
+    return {
+        "applied_after_wave": 1,
+        "action": "reordered_remaining_query_plan",
+        "strong_group_count": len(strong_groups),
+        "weak_group_count": len(weak_groups),
+        "provider_lift": provider_lift,
+        "completed_groups": sorted(group_summaries, key=lambda item: item["final_candidates"], reverse=True),
+        "remaining_groups_ranked": ranked_remaining[:20],
+    }
+
+
+def apply_dynamic_wave_selection(query_plan, start_index, selection, diagnostics, all_rows):
+    if not selection:
+        return query_plan
+
+    by_query_group = diagnostics.get("by_query_group", {}) if isinstance(diagnostics, dict) else {}
+    final_by_group = unique_rows_by_query_group(all_rows)
+    provider_lift = provider_lift_from_rows(all_rows)
+    seen_groups = {}
+    for query_info in query_plan[:start_index]:
+        if query_info.get("query_type") == "location_verification":
+            continue
+        group_id = query_info.get("query_group_id") or "unknown"
+        seen_groups[group_id] = query_info
+    strong_groups = [query_info for group_id, query_info in seen_groups.items() if final_by_group.get(group_id, 0) > 0]
+    weak_groups = [
+        query_info
+        for group_id, query_info in seen_groups.items()
+        if final_by_group.get(group_id, 0) == 0 and int((by_query_group.get(group_id, {}) or {}).get("accepted_rows", 0) or 0) == 0
+    ]
+
+    untouched = query_plan[:start_index]
+    remaining = list(query_plan[start_index:])
+    remaining.sort(
+        key=lambda query_info: (
+            int(query_info.get("adaptive_wave", 1) or 1),
+            -dynamic_query_group_score(query_info, strong_groups, weak_groups, provider_lift),
+            int(query_info.get("page", 1) or 1),
+            query_info.get("provider", ""),
+            int(query_info.get("query_group_index", 0) or 0),
+        )
+    )
+    return untouched + remaining
+
+
 def attach_query_context(rows, query_info):
     for row in rows:
         row["role"] = query_info["title_input"]
@@ -338,6 +510,11 @@ def attach_query_context(rows, query_info):
         row["location"] = row.get("location", "")
         row["source_site"] = query_info["source_site"]
         row["search_page"] = query_info.get("page", 1)
+        row["query_group_id"] = query_info.get("query_group_id", "")
+        row["query_group_index"] = query_info.get("query_group_index", 0)
+        row["query_group_label"] = query_info.get("query_group_label", "")
+        row["adaptive_wave"] = query_info.get("adaptive_wave", 1)
+        row["adaptive_wave_label"] = query_info.get("adaptive_wave_label", "")
     return rows
 
 
@@ -376,6 +553,7 @@ def build_diagnostics(verification_limit):
         "verification_confirmed": 0,
         "verification_limit": verification_limit,
         "by_provider": {},
+        "by_query_group": {},
     }
 
 
@@ -403,6 +581,34 @@ def add_diagnostic(diagnostics, provider, key, count=1):
     provider_stats[key] = provider_stats.get(key, 0) + count
 
 
+def query_group_diagnostics(diagnostics, query_info):
+    groups = diagnostics.setdefault("by_query_group", {})
+    group_id = query_info.get("query_group_id") or "unknown"
+    if group_id not in groups:
+        groups[group_id] = {
+            "query_group_id": group_id,
+            "query_group_index": int(query_info.get("query_group_index") or 0),
+            "query_group_label": query_info.get("query_group_label") or group_id,
+            "adaptive_wave": int(query_info.get("adaptive_wave", 1) or 1),
+            "adaptive_wave_label": query_info.get("adaptive_wave_label", ""),
+            "title_input": query_info.get("title_input", ""),
+            "skill_input": query_info.get("skill_input", ""),
+            "location_input": query_info.get("location_input", ""),
+            "source_site": query_info.get("source_site", ""),
+            "sample_query": query_info.get("query", ""),
+            "raw_rows": 0,
+            "quality_rows": 0,
+            "accepted_rows": 0,
+            "strict_location_rejected": 0,
+        }
+    return groups[group_id]
+
+
+def add_query_group_diagnostic(diagnostics, query_info, key, count=1):
+    group_stats = query_group_diagnostics(diagnostics, query_info)
+    group_stats[key] = group_stats.get(key, 0) + count
+
+
 def count_items_by_provider(items, *, provider_key="provider", include_verification=True):
     counts = {}
     for item in items or []:
@@ -410,6 +616,28 @@ def count_items_by_provider(items, *, provider_key="provider", include_verificat
             continue
         provider = item.get(provider_key) or "unknown"
         counts[provider] = counts.get(provider, 0) + 1
+    return counts
+
+
+def count_items_by_query_group(items, *, include_verification=True):
+    counts = {}
+    for item in items or []:
+        if not include_verification and item.get("query_type") == "location_verification":
+            continue
+        group_id = item.get("query_group_id") or "unknown"
+        counts[group_id] = counts.get(group_id, 0) + 1
+    return counts
+
+
+def provider_counts_by_query_group(items, *, provider_key="provider", include_verification=True):
+    counts = {}
+    for item in items or []:
+        if not include_verification and item.get("query_type") == "location_verification":
+            continue
+        group_id = item.get("query_group_id") or "unknown"
+        provider = item.get(provider_key) or "unknown"
+        counts.setdefault(group_id, {})
+        counts[group_id][provider] = counts[group_id].get(provider, 0) + 1
     return counts
 
 
@@ -513,6 +741,109 @@ def build_provider_contribution_report(
             "Accepted rows are quality rows that survived strict-location filtering.",
             "Final unique candidates are counted after dedupe and result-limit capping.",
             "Unique lift is attributed to the provider whose row survived dedupe first.",
+        ],
+    }
+
+
+def ordered_query_group_keys(query_plan, by_query_group, final_candidates):
+    ordered = []
+    seen = set()
+    for query_info in query_plan or []:
+        if query_info.get("query_type") == "location_verification":
+            continue
+        group_id = query_info.get("query_group_id") or "unknown"
+        if group_id not in seen:
+            seen.add(group_id)
+            ordered.append(group_id)
+    for group_map in (by_query_group or {}, final_candidates or {}):
+        for group_id in group_map:
+            if group_id not in seen:
+                seen.add(group_id)
+                ordered.append(group_id)
+    return ordered
+
+
+def build_query_group_contribution_report(
+    *,
+    query_plan,
+    executed_queries,
+    diagnostics,
+    final_rows,
+):
+    by_query_group = diagnostics.get("by_query_group", {}) if isinstance(diagnostics, dict) else {}
+    planned_calls = count_items_by_query_group(query_plan, include_verification=False)
+    executed_calls = count_items_by_query_group(executed_queries, include_verification=False)
+    final_candidates = count_items_by_query_group(final_rows)
+    executed_providers = provider_counts_by_query_group(executed_queries, include_verification=False)
+    final_providers = provider_counts_by_query_group(final_rows, provider_key="search_provider")
+    group_keys = ordered_query_group_keys(query_plan, by_query_group, final_candidates)
+
+    groups = []
+    hidden_unexecuted_groups = 0
+    for group_id in group_keys:
+        stats = by_query_group.get(group_id, {})
+        accepted_rows = int(stats.get("accepted_rows", 0) or 0)
+        final_count = int(final_candidates.get(group_id, 0) or 0)
+        executed_count = int(executed_calls.get(group_id, 0) or 0)
+        raw_rows = int(stats.get("raw_rows", 0) or 0)
+        quality_rows = int(stats.get("quality_rows", 0) or 0)
+        strict_location_rejected = int(stats.get("strict_location_rejected", 0) or 0)
+        if not executed_count and not raw_rows and not quality_rows and not accepted_rows and not final_count:
+            hidden_unexecuted_groups += 1
+            continue
+        provider_lift = final_providers.get(group_id, {})
+        top_provider = ""
+        if provider_lift:
+            top_provider = max(provider_lift.items(), key=lambda item: item[1])[0]
+        groups.append(
+            {
+                "query_group_id": group_id,
+                "query_group_index": int(stats.get("query_group_index", 0) or 0),
+                "query_group_label": stats.get("query_group_label") or group_id,
+                "adaptive_wave": int(stats.get("adaptive_wave", 1) or 1),
+                "adaptive_wave_label": stats.get("adaptive_wave_label", ""),
+                "title_input": stats.get("title_input", ""),
+                "skill_input": stats.get("skill_input", ""),
+                "location_input": stats.get("location_input", ""),
+                "source_site": stats.get("source_site", ""),
+                "sample_query": stats.get("sample_query", ""),
+                "planned_calls": int(planned_calls.get(group_id, 0) or 0),
+                "executed_calls": executed_count,
+                "raw_rows": raw_rows,
+                "quality_rows": quality_rows,
+                "strict_location_rejected": strict_location_rejected,
+                "accepted_rows": accepted_rows,
+                "final_candidates": final_count,
+                "unique_lift": final_count,
+                "deduped_or_capped_out": max(accepted_rows - final_count, 0),
+                "executed_provider_counts": executed_providers.get(group_id, {}),
+                "final_provider_counts": provider_lift,
+                "top_provider": top_provider,
+            }
+        )
+
+    groups.sort(key=lambda item: (item["adaptive_wave"], item["query_group_index"], item["query_group_id"]))
+    ranked_groups = sorted(groups, key=lambda item: item["final_candidates"], reverse=True)
+    totals = {
+        "planned_calls": sum(item["planned_calls"] for item in groups),
+        "executed_calls": sum(item["executed_calls"] for item in groups),
+        "raw_rows": sum(item["raw_rows"] for item in groups),
+        "quality_rows": sum(item["quality_rows"] for item in groups),
+        "strict_location_rejected": sum(item["strict_location_rejected"] for item in groups),
+        "accepted_rows": sum(item["accepted_rows"] for item in groups),
+        "final_candidates": len(final_rows or []),
+        "deduped_or_capped_out": sum(item["deduped_or_capped_out"] for item in groups),
+        "hidden_unexecuted_groups": hidden_unexecuted_groups,
+    }
+
+    return {
+        "groups": groups,
+        "ranked_groups": ranked_groups[:10],
+        "totals": totals,
+        "notes": [
+            "Query group lift is attributed to the group whose row survived dedupe and result-limit capping.",
+            "Use Wave 1 group lift to decide which later semantic groups deserve more calls.",
+            "Unexecuted groups with zero rows are hidden from the report to keep benchmarks readable.",
         ],
     }
 
@@ -726,7 +1057,7 @@ def run_search(
     if len(providers) == 1 and providers[0] not in {"tavily", *PAGINATED_PROVIDERS} and requested_count > 20:
         raise RuntimeError(f"{providers[0]} supports up to 20 results per search")
 
-    base_queries = build_queries(search_input)
+    base_queries = annotate_query_groups(build_queries(search_input))
     query_waves = split_queries_into_adaptive_waves(base_queries, requested_count)
     started_at = time.time()
     per_request_limit = min(requested_count, 20)
@@ -742,6 +1073,8 @@ def run_search(
     verification_limit = max(int(config.get("location_verification_limit", 20) or 0), 0)
     diagnostics = build_diagnostics(verification_limit)
     location_metadata = country_metadata_from_target_locations(target_locations)
+    dynamic_wave_selection = None
+    dynamic_wave_selection_applied = False
     verification_state = {
         "attempts": 0,
         "confirmed": 0,
@@ -751,11 +1084,23 @@ def run_search(
         "target_providers": resolve_location_verification_target_providers(config),
     }
 
-    for index, query_info in enumerate(query_plan, start=1):
+    plan_index = 0
+    while plan_index < len(query_plan):
         if len(dedupe_rows(all_rows)) >= requested_count:
             break
+        query_info = query_plan[plan_index]
+        if (
+            not dynamic_wave_selection_applied
+            and requested_count >= ADAPTIVE_WAVE_MIN_REQUESTED_COUNT
+            and int(query_info.get("adaptive_wave", 1) or 1) > 1
+        ):
+            dynamic_wave_selection = build_dynamic_wave_selection(query_plan, plan_index, diagnostics, all_rows)
+            if dynamic_wave_selection:
+                query_plan = apply_dynamic_wave_selection(query_plan, plan_index, dynamic_wave_selection, diagnostics, all_rows)
+                query_info = query_plan[plan_index]
+            dynamic_wave_selection_applied = True
         if progress_callback:
-            progress_callback(index, len(query_plan), query_info, started_at, len(all_rows))
+            progress_callback(plan_index + 1, len(query_plan), query_info, started_at, len(all_rows))
 
         query = query_info["query"]
         provider = query_info["provider"]
@@ -764,6 +1109,7 @@ def run_search(
         if wave_summary and wave_summary["started_unique_candidates"] is None:
             wave_summary["started_unique_candidates"] = len(dedupe_rows(all_rows))
         if provider in failed_providers:
+            plan_index += 1
             continue
         executed_queries.append(query_info)
         if wave_summary:
@@ -796,6 +1142,7 @@ def run_search(
                 provider_errors.append(error)
             if error.get("kind") in {"credits", "rate_limit", "auth", "configuration"}:
                 failed_providers.add(provider)
+            plan_index += 1
             continue
 
         for row in rows:
@@ -804,10 +1151,12 @@ def run_search(
         rows = normalize_devpost_rows(rows)
         rows = [annotate_location_match(row, target_locations, location_metadata) for row in rows]
         add_diagnostic(diagnostics, provider, "raw_rows", len(rows))
+        add_query_group_diagnostic(diagnostics, query_info, "raw_rows", len(rows))
         if wave_summary:
             wave_summary["raw_rows"] += len(rows)
         quality_rows = [row for row in rows if row_filter(row)]
         add_diagnostic(diagnostics, provider, "quality_rows", len(quality_rows))
+        add_query_group_diagnostic(diagnostics, query_info, "quality_rows", len(quality_rows))
         if wave_summary:
             wave_summary["quality_rows"] += len(quality_rows)
         if provider in verification_state["target_providers"] and location_policy == "strict" and verification_limit:
@@ -835,13 +1184,16 @@ def run_search(
                     add_diagnostic(diagnostics, provider, "confirmed_location")
             elif location_policy == "strict":
                 add_location_rejection_diagnostics(diagnostics, provider, row)
+                add_query_group_diagnostic(diagnostics, query_info, "strict_location_rejected")
         if location_policy == "strict":
             quality_rows = [row for row in quality_rows if row_matches_strict_locations(row, target_locations)]
         add_diagnostic(diagnostics, provider, "accepted_rows", len(quality_rows))
+        add_query_group_diagnostic(diagnostics, query_info, "accepted_rows", len(quality_rows))
         all_rows.extend(quality_rows)
         if wave_summary:
             wave_summary["accepted_rows"] += len(quality_rows)
             wave_summary["unique_candidates_after_wave"] = len(dedupe_rows(all_rows))
+        plan_index += 1
 
     rows = dedupe_rows(all_rows)[:requested_count]
     adaptive_wave_summaries = finalize_adaptive_wave_summaries(
@@ -862,6 +1214,10 @@ def run_search(
         "enabled": requested_count >= ADAPTIVE_WAVE_MIN_REQUESTED_COUNT and len(query_waves) > 1,
         "planned_wave_count": len(query_waves),
         "completed_wave_count": len([item for item in adaptive_wave_summaries if item["executed_calls"]]),
+        "dynamic_selection": dynamic_wave_selection or {
+            "action": "not_applied",
+            "reason": "No later wave reached or no completed wave signal was available.",
+        },
         "waves": adaptive_wave_summaries,
     }
     search_strategy["country_location"] = location_metadata or {}
@@ -882,6 +1238,12 @@ def run_search(
         provider_errors=provider_errors,
         requested_count=requested_count,
         location_policy=location_policy,
+    )
+    search_strategy["query_group_contribution_report"] = build_query_group_contribution_report(
+        query_plan=query_plan,
+        executed_queries=executed_queries,
+        diagnostics=diagnostics,
+        final_rows=rows,
     )
     return {
         "provider": "hybrid" if len(providers) > 1 else providers[0],

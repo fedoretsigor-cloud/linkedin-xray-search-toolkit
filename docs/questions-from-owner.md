@@ -269,12 +269,20 @@ Implementation note:
 - Provider diagnostics are stored in run JSON for analysis, but the noisy diagnostics cards are hidden from the main UI.
 - Provider Contribution Report is now visible after each search and exportable to CSV. It shows raw rows, strict-location rejects, accepted rows, final unique candidates, dedupe/cap loss, executed calls, and warnings per provider.
 - Adaptive waves are now implemented for 100/200-candidate searches: wave 1 focused groups, wave 2 alternate role/skill groups, wave 3 broader discovery groups for 200-candidate searches if still below target.
+- Query Group Contribution Report is now visible inside the contribution report and exportable to CSV. It shows which semantic query groups produced raw rows, accepted rows, final unique candidates, dedupe/cap loss, provider lift, and sample queries.
+- The first adaptive-intelligence layer is implemented: when a large search reaches Wave 2, the remaining Wave 2/3 plan is reranked using Wave 1 productive groups, weak groups, and provider lift.
+- Benchmark captured on 2026-05-11: Data Analyst, Poland, Max depth, 200 candidates returned 200 candidates in 996.55 seconds, about 16 minutes 37 seconds, with 203 executed provider queries out of 372 planned.
+- Progress UX now uses this large-search benchmark to show elapsed time, approximate remaining time, and a more honest long-running message near the spinner.
+- Benchmark captured on 2026-05-11: QA Automation Engineer, Poland, Max depth, 200 candidates returned 200 candidates in 438.27 seconds, about 7 minutes 18 seconds, with 90 executed provider queries out of 372 planned.
+- Query Group Contribution Report now hides unexecuted zero-row groups from the UI/CSV so reports do not show placeholder rows such as `group-10`.
+- Benchmark Summary now compares recent runs in the UI and CSV by duration, executed/planned calls, provider lift, and top query groups.
+- Benchmark Summary filters were added for all runs, same role family, same location, and Max 200 runs; CSV export follows the selected filter.
 
 Planned next adaptive layer:
 
-- After Wave 1, calculate unique lift by query group and provider, not only by provider overall.
-- Use that lift to decide whether Wave 2/3 should run the preplanned next groups, skip weak groups, or replace them with alternate groups from the same semantic family.
-- Keep this as a later search-engine slice after real benchmark data, so we do not overfit the planner without evidence.
+- Benchmark whether dynamic Wave 2/3 reranking improves unique lift on real 100/200-candidate searches.
+- Add a second adaptive layer that can skip weak groups or replace them with alternate groups from the same semantic family.
+- Keep skip/replace behind benchmark evidence, so we do not overfit the planner without real search data.
 
 Next provider evaluation shortlist:
 

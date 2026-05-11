@@ -158,6 +158,7 @@ Current implementation:
 - Search Depth UI added: Standard, Medium, Extended, and Max.
 - Max search depth now uses deeper API pagination for paginated providers: up to 10 pages for Bing / SerpApi, Google / SerpApi, and Google / Serper.
 - Adaptive search waves are implemented for 100/200-candidate searches: wave 1 runs focused groups, wave 2 runs alternate groups, and wave 3 runs broader discovery groups for 200-candidate searches if the requested limit is still not filled.
+- Dynamic adaptive-wave reranking is implemented as a first intelligence layer: when search reaches Wave 2, the remaining query plan is reordered using Wave 1 query-group unique lift and provider lift.
 - Role presets now cover more non-developer sourcing cases: Business Analysis, Data / BI Analytics, Product / Project Management, Architecture / Leadership, and UX / Product Design. These groups also have backend/frontend semantic families and query groups, not only dropdown labels.
 - The run stores `search_strategy`.
 - The sourcing project stores the latest `search_strategy`.
@@ -167,7 +168,7 @@ Remaining work:
 - Explain recall vs precision tradeoffs.
 - Allow the human to approve or edit query groups before running search.
 - Add provider-level explainability: raw results, strict-location filtered results, deduped contribution, and unique candidate lift per provider.
-- Add adaptive wave intelligence: after Wave 1, calculate unique lift by query group/provider and use it to choose, skip, or replace later wave groups instead of only following the pre-split plan.
+- Add the next adaptive wave intelligence layer: skip weak groups or replace them with alternates from the same semantic family, rather than only reranking the remaining plan.
 - Improve query planner clarity further after testing real searches.
 
 ### Phase 4: Candidate Search
@@ -200,6 +201,8 @@ Current implementation:
 - Detailed diagnostics are hidden from the main results UI by default so the recruiter sees a cleaner candidate table, while the run JSON remains auditable.
 - A compact Provider Contribution Report is now shown after each search and can be exported to CSV. It summarizes raw rows, strict-location rejects, accepted rows, final unique candidates, dedupe/cap loss, executed calls, and warnings per provider.
 - Adaptive wave diagnostics are stored in `search_strategy.adaptive_waves` and shown inside the contribution report, including which waves ran, calls per wave, raw rows, accepted rows, and unique candidates after each wave.
+- Dynamic wave selection is stored in `search_strategy.adaptive_waves.dynamic_selection` and shown in the adaptive-wave report. The first slice reranks remaining Wave 2/3 calls using Wave 1 productive/weak query groups and provider lift.
+- Query-group contribution diagnostics are stored in `search_strategy.query_group_contribution_report` and shown inside the contribution report, including calls, raw rows, accepted rows, final unique candidates, dedupe/cap loss, sample query, and provider lift by group.
 - Search runs store the actual executed provider queries, including page/start/first offsets, so we can audit what was sent after early stopping.
 - Hybrid role presets and editable role variants are implemented.
 - Query expansion now prefers meaningful family-specific search angles over repeated identical queries or noisy generic boosters.
@@ -215,9 +218,9 @@ Remaining work:
 
 - Improve source-specific search behavior per source.
 - Benchmark provider quality across Standard, Medium, Extended, and Max search depths.
-- Improve the Provider Contribution Report with query-group-level breakdowns after enough real benchmark runs.
+- Use the new query-group contribution report in real benchmark runs and tune group ordering/selection.
 - Benchmark adaptive waves on 100/200-candidate searches and tune the wave split if real runs show too little unique lift.
-- Add a second adaptive-wave layer that learns from Wave 1 unique lift and selects later query groups dynamically.
+- Add a second adaptive-wave layer that can skip weak groups or replace them with alternates from the same semantic family.
 - Add a Projects UI so users can browse projects directly, not only search history.
 - Decide whether Render production should use persistent disk/database instead of local JSON for long-term storage.
 
@@ -520,10 +523,12 @@ Recommended next build order:
 19. Done first slice: Add provider contribution reporting for raw, filtered, deduped, and unique-lift counts with CSV export.
 20. Done first slice: Add adaptive second/third search waves when a 100/200-candidate search returns too few unique results.
 21. Done first slice: Expand role presets and semantic query families beyond engineering into analysts, managers, architects, and product/design roles.
-22. Next search-engine slice: Add query-group unique-lift analysis after Wave 1 and use it to choose, skip, or replace later adaptive wave groups.
-23. Later: Add decision memory across profile and resume review.
-24. Later: Add conversational sourcing copilot on top of stable workflow actions.
-25. Backlog: Add candidate communication tracking after the core review workflow is stable.
+22. Done first slice: Add query-group contribution reporting with unique lift, accepted rows, provider lift, and CSV export.
+23. Done first slice: Use Wave 1 query-group unique lift and provider lift to rerank the remaining adaptive wave plan.
+24. Next search-engine slice: Let adaptive waves skip weak groups or replace them with semantic-family alternates.
+25. Later: Add decision memory across profile and resume review.
+26. Later: Add conversational sourcing copilot on top of stable workflow actions.
+27. Backlog: Add candidate communication tracking after the core review workflow is stable.
 
 ## Current Decision
 
@@ -537,7 +542,7 @@ Owner search-engine questions are tracked in `docs/questions-from-owner.md` unde
 
 ## Progress Snapshot
 
-Last updated: 2026-05-09.
+Last updated: 2026-05-11.
 
 Completed:
 
@@ -599,7 +604,15 @@ Completed:
 - Country-only searches can use LinkedIn country subdomains as local proof, for example `pl.linkedin.com` for Poland, while city searches still require city evidence from indexed profile/header/snippet text.
 - Provider diagnostics are stored in run JSON but hidden from the main UI.
 - Provider Contribution Report now surfaces compact per-provider raw rows, strict-location rejects, accepted rows, final unique candidates, dedupe/cap loss, executed calls, and CSV export.
+- Query Group Contribution Report now surfaces per-group calls, raw rows, accepted rows, final unique lift, dedupe/cap loss, provider lift, sample query, and CSV export.
 - Adaptive search waves now run for 100/200-candidate searches and record per-wave diagnostics.
+- Adaptive waves now rerank the remaining Wave 2/3 plan when Wave 1 has enough signal, using productive/weak query groups and provider lift.
+- Captured first large-search timing benchmark: Data Analyst, Poland, Max depth, 200 candidates completed in 996.55 seconds, about 16 minutes 37 seconds, with 203 executed provider queries out of 372 planned.
+- Search progress now shows elapsed time, approximate remaining time, and a more realistic large-search estimate instead of sitting silently at 87%.
+- Captured second large-search benchmark: QA Automation Engineer, Poland, Max depth, 200 candidates completed in 438.27 seconds, about 7 minutes 18 seconds, with 90 executed provider queries out of 372 planned.
+- Query Group Contribution Report now hides unexecuted zero-row groups from UI/CSV exports, keeping benchmark reports focused on groups that actually ran or produced lift.
+- Benchmark Summary now compares recent runs in the UI and CSV by duration, executed/planned calls, provider lift, and top query groups.
+- Benchmark Summary now includes quick filters for all runs, same role family, same location, and Max 200 runs; CSV export follows the active filter.
 - Role presets and semantic families now include Business Analysis, Data / BI Analytics, Product / Project Management, Architecture / Leadership, and UX / Product Design.
 - Executed-query audit files can be generated from saved runs to inspect the exact provider queries and pagination offsets that were sent.
 - Server log files are ignored by Git.
@@ -611,13 +624,13 @@ In progress:
 - Strict location filtering and UX validation on real Houston searches.
 - Provider-quality benchmarking across Standard, Medium, Extended, and Max search depths.
 - High-recall search planning for 100/200-candidate runs, including real-run adaptive wave tuning.
-- Adaptive-wave intelligence that uses Wave 1 unique lift by query group/provider to pick better later wave groups.
+- Adaptive-wave intelligence validation on real 100/200-candidate searches, including whether reranking improves unique lift.
 - Resume review UX.
 - Frontend simplification so the left panel stays usable as the workflow grows.
 
 Next recommended product step:
 
 - Run side-by-side benchmarks for Standard, Medium, Extended, and Max on the same requirement. Use the Provider Contribution Report, saved diagnostics, and executed-query audits to compare actual provider contribution, not just planned query counts.
-- Benchmark adaptive waves on 100/200-candidate searches and tune wave sizing using Provider Contribution Report output.
-- Design the next adaptive-wave intelligence layer: query-group contribution report, Wave 1 lift scoring, and dynamic Wave 2/3 selection.
+- Benchmark adaptive waves on 100/200-candidate searches and tune wave sizing using Provider + Query Group Contribution Report output.
+- Benchmark dynamic Wave 2/3 reranking and design the next adaptive layer: skip weak groups or replace them with semantic-family alternates.
 - Test the next provider shortlist with the same X-Ray query set and compare raw LinkedIn URLs, strict-location survivors, deduped candidates, cost, and pagination behavior.

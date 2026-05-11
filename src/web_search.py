@@ -196,6 +196,7 @@ def build_run_record(search, search_result):
         "confirmed_brief": search.get("confirmed_brief"),
         "search_strategy": search_strategy,
         "provider_contribution_report": search_strategy.get("provider_contribution_report", {}),
+        "query_group_contribution_report": search_strategy.get("query_group_contribution_report", {}),
         "provider_errors": search_result.get("provider_errors", []),
         "queries": search_result["queries"],
         "queries_count": len(search_result["queries"]),

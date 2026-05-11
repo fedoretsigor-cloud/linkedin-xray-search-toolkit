@@ -509,14 +509,6 @@ function validateEnglishOnly(data) {
   return !fields.some(hasCyrillic);
 }
 
-function getExpectedQueryPasses(resultLimit) {
-  const limit = Number(resultLimit) || 20;
-  if (limit <= 20) return 1;
-  if (limit <= 40) return 2;
-  if (limit <= 60) return 3;
-  if (limit <= 100) return 5;
-  return 10;
-}
 function scoreClass(score) {
   if (score >= 90) return "score-strong";
   if (score >= 75) return "score-good";
@@ -568,6 +560,81 @@ function getProviderPageCap(provider, searchDepth) {
 
 function countProviderPasses(providers, searchDepth) {
   return providers.reduce((total, provider) => total + getProviderPageCap(provider, searchDepth), 0);
+}
+
+function formatTimerDuration(milliseconds) {
+  const totalSeconds = Math.max(0, Math.round(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatApproxDuration(milliseconds) {
+  const minutes = Math.max(1, Math.round(milliseconds / 60000));
+  if (minutes < 60) return `~${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes ? `~${hours}h ${remainingMinutes}m` : `~${hours}h`;
+}
+
+function estimatePlannedSearchCalls(data) {
+  const strategy = data?.confirmed_brief?.search_strategy || state.strategyPreview || {};
+  const planned = Number(strategy.query_count || strategy.planned_query_count || 0);
+  if (planned > 0) return planned;
+
+  const sourceCount = Math.max(data?.sources?.length || 1, 1);
+  const providerCount = Math.max(data?.providers?.length || 1, 1);
+  const searchDepth = getSearchDepthConfig(data?.search_depth || "extended");
+  const providerPasses = countProviderPasses(data?.providers || searchDepth.providers, searchDepth);
+  return desiredQueryGroupCount(data?.num) * Math.max(sourceCount, 1) * Math.max(providerPasses || providerCount, 1);
+}
+
+function estimateSearchDurationMs(data) {
+  const limit = Number(data?.num) || 20;
+  const searchDepthKey = data?.search_depth || "extended";
+  const searchDepth = getSearchDepthConfig(searchDepthKey);
+  const plannedCalls = estimatePlannedSearchCalls(data);
+  const providerCount = Math.max(data?.providers?.length || searchDepth.providers.length || 1, 1);
+  const baseQueryCount = Math.max(Number(data?.confirmed_brief?.search_strategy?.base_query_count || state.strategyPreview?.base_query_count || 0), desiredQueryGroupCount(limit));
+
+  const perCallMs = {
+    standard: 2600,
+    medium: 3300,
+    extended: 4200,
+    max: 4900,
+  }[searchDepthKey] || 4200;
+
+  const expectedExecutedCalls = Math.min(
+    plannedCalls,
+    Math.max(baseQueryCount * providerCount, Math.ceil(limit * (searchDepthKey === "max" ? 1.05 : 0.75)))
+  );
+  const estimated = 15000 + expectedExecutedCalls * perCallMs;
+
+  if (searchDepthKey === "max" && limit >= 200) {
+    return Math.max(estimated, 996550);
+  }
+  return Math.max(estimated, 9000);
+}
+
+function describeSearchEstimate(data, estimatedDuration) {
+  const limit = Number(data?.num) || 20;
+  const searchDepth = getSearchDepthConfig(data?.search_depth || "extended");
+  const providerCount = Math.max(data?.providers?.length || searchDepth.providers.length || 1, 1);
+  if (limit >= 200 && data?.search_depth === "max") {
+    return `Large search: estimated ${formatApproxDuration(estimatedDuration)} total for 200 candidates. Keep this tab open.`;
+  }
+  if (limit >= 100) {
+    return `Large search: estimated ${formatApproxDuration(estimatedDuration)} total across ${providerCount} providers. Keep this tab open.`;
+  }
+  return `Estimated ${formatApproxDuration(estimatedDuration)} total across ${providerCount} provider${providerCount > 1 ? "s" : ""}.`;
+}
+
+function formatProgressTiming(startedAt, estimatedDuration) {
+  const elapsed = Date.now() - startedAt;
+  if (elapsed > estimatedDuration) {
+    return `Elapsed ${formatTimerDuration(elapsed)} - over ${formatApproxDuration(estimatedDuration)} estimate, still working`;
+  }
+  return `Elapsed ${formatTimerDuration(elapsed)} - remaining ${formatApproxDuration(estimatedDuration - elapsed)} - estimated total ${formatApproxDuration(estimatedDuration)}`;
 }
 
 function escapeHtml(value) {
@@ -861,6 +928,7 @@ function getProgressElements() {
     copy: document.getElementById("search-progress-copy"),
     percent: document.getElementById("search-progress-percent"),
     bar: document.getElementById("search-progress-bar"),
+    time: document.getElementById("search-progress-time"),
     steps: Array.from(document.querySelectorAll(".progress-step")),
     providerAlerts: document.getElementById("provider-alerts"),
     empty: document.getElementById("results-state"),
@@ -869,7 +937,7 @@ function getProgressElements() {
   };
 }
 
-function paintProgress(percent, title, copy) {
+function paintProgress(percent, title, copy, timing = "") {
   const ui = getProgressElements();
   if (!ui.card) return;
   const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
@@ -883,6 +951,10 @@ function paintProgress(percent, title, copy) {
   ui.copy.textContent = copy;
   ui.percent.textContent = `${safePercent}%`;
   ui.bar.style.width = `${safePercent}%`;
+  if (ui.time) {
+    ui.time.textContent = timing;
+    ui.time.classList.toggle("hidden", !timing);
+  }
 
   ui.steps.forEach((step, index) => {
     const stepNumber = index + 1;
@@ -897,6 +969,10 @@ function hideProgressCard() {
   ui.card.classList.add("hidden");
   ui.bar.style.width = "0%";
   ui.percent.textContent = "0%";
+  if (ui.time) {
+    ui.time.textContent = "";
+    ui.time.classList.add("hidden");
+  }
   ui.steps.forEach((step) => {
     step.classList.remove("is-active", "is-complete");
   });
@@ -925,7 +1001,7 @@ function renderProviderAlerts(errors) {
       <div class="provider-alert-card is-${escapeHtml(kind)}">
         <div>
           <strong>${escapeHtml(formatProviderLabel(error.provider))}</strong>
-          <span>${escapeHtml(formatProviderErrorKind(kind))}${status ? ` · ${escapeHtml(status)}` : ""}</span>
+          <span>${escapeHtml(formatProviderErrorKind(kind))}${status ? ` - ${escapeHtml(status)}` : ""}</span>
         </div>
         <p>${escapeHtml(userMessage)}</p>
         ${detail}
@@ -1048,6 +1124,39 @@ function formatWaveStatus(status) {
   return labels[status] || status || "-";
 }
 
+function renderDynamicWaveSelection(selection) {
+  if (!selection || selection.action === "not_applied") {
+    return `
+      <p class="provider-report-note">
+        Dynamic selection was not needed yet. It applies when the search reaches Wave 2.
+      </p>
+    `;
+  }
+
+  const ranked = Array.isArray(selection.remaining_groups_ranked) ? selection.remaining_groups_ranked : [];
+  const topRanked = ranked.slice(0, 5);
+  return `
+    <div class="dynamic-wave-selection">
+      <strong>Dynamic selection applied after Wave ${escapeHtml(selection.applied_after_wave || 1)}</strong>
+      <p>
+        Reordered later calls using Wave 1 signal:
+        ${escapeHtml(toReportNumber(selection.strong_group_count).toLocaleString())} productive groups,
+        ${escapeHtml(toReportNumber(selection.weak_group_count).toLocaleString())} weak groups.
+      </p>
+      ${topRanked.length ? `
+        <ul>
+          ${topRanked.map((group) => `
+            <li>
+              ${escapeHtml(group.query_group_label || group.query_group_id)}
+              <span>${escapeHtml(formatProviderLabel(group.provider))}, score ${escapeHtml(group.score)}</span>
+            </li>
+          `).join("")}
+        </ul>
+      ` : ""}
+    </div>
+  `;
+}
+
 function renderAdaptiveWaveReport(adaptiveWaves) {
   const waves = Array.isArray(adaptiveWaves?.waves) ? adaptiveWaves.waves : [];
   if (!waves.length || (!adaptiveWaves?.enabled && waves.length <= 1)) return "";
@@ -1081,8 +1190,374 @@ function renderAdaptiveWaveReport(adaptiveWaves) {
           </tbody>
         </table>
       </div>
+      ${renderDynamicWaveSelection(adaptiveWaves?.dynamic_selection)}
     </details>
   `;
+}
+
+function getQueryGroupContributionReport(run) {
+  return run?.query_group_contribution_report
+    || run?.search_strategy?.query_group_contribution_report
+    || null;
+}
+
+function formatProviderBreakdown(counts) {
+  const entries = Object.entries(counts || {})
+    .filter(([, count]) => toReportNumber(count) > 0)
+    .sort((left, right) => toReportNumber(right[1]) - toReportNumber(left[1]));
+  if (!entries.length) return "-";
+  return entries
+    .slice(0, 3)
+    .map(([provider, count]) => `${formatProviderLabel(provider)} ${toReportNumber(count).toLocaleString()}`)
+    .join(", ");
+}
+
+function isVisibleQueryGroup(group) {
+  return [
+    group?.executed_calls,
+    group?.raw_rows,
+    group?.quality_rows,
+    group?.accepted_rows,
+    group?.final_candidates,
+  ].some((value) => toReportNumber(value) > 0);
+}
+
+function queryGroupReportToCsv(report, run) {
+  const headers = [
+    "Run ID",
+    "Wave",
+    "Query group",
+    "Source",
+    "Location",
+    "Planned calls",
+    "Executed calls",
+    "Raw rows",
+    "Quality rows",
+    "Strict location rejected",
+    "Accepted rows",
+    "Final unique candidates",
+    "Unique lift",
+    "Deduped or capped out",
+    "Top provider",
+    "Provider lift breakdown",
+    "Sample query",
+  ];
+  const rows = (report.groups || []).filter(isVisibleQueryGroup).map((group) => [
+    run?.id || "",
+    group.adaptive_wave_label || group.adaptive_wave || "",
+    group.query_group_label || group.skill_input || group.query_group_id,
+    group.source_site || "",
+    group.location_input || "",
+    group.planned_calls,
+    group.executed_calls,
+    group.raw_rows,
+    group.quality_rows,
+    group.strict_location_rejected,
+    group.accepted_rows,
+    group.final_candidates,
+    group.unique_lift,
+    group.deduped_or_capped_out,
+    group.top_provider ? formatProviderLabel(group.top_provider) : "",
+    formatProviderBreakdown(group.final_provider_counts),
+    group.sample_query || "",
+  ]);
+  return [
+    headers.map(csvCell).join(","),
+    ...rows.map((row) => row.map(csvCell).join(",")),
+  ].join("\n");
+}
+
+function downloadQueryGroupReportCsv(report, run) {
+  const csv = queryGroupReportToCsv(report, run);
+  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `query-group-contribution-${run?.id || "search"}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function renderQueryGroupContributionReport(report) {
+  const groups = Array.isArray(report?.groups) ? report.groups.filter(isVisibleQueryGroup) : [];
+  if (!groups.length) return "";
+  const ranked = Array.isArray(report?.ranked_groups) ? report.ranked_groups.filter(isVisibleQueryGroup) : [];
+  const bestGroups = ranked.filter((group) => toReportNumber(group.final_candidates) > 0).slice(0, 3);
+  const bestCopy = bestGroups.length
+    ? `Best lift: ${bestGroups.map((group) => `${group.query_group_label || group.query_group_id} (${toReportNumber(group.final_candidates)})`).join("; ")}.`
+    : "No query group produced unique final candidates yet.";
+
+  return `
+    <details class="provider-report-waves">
+      <summary>Query group contribution (${escapeHtml(groups.length.toLocaleString())} groups)</summary>
+      <div class="query-group-report-header">
+        <p>${escapeHtml(bestCopy)}</p>
+        <button type="button" class="ghost-btn compact-btn" data-query-group-report-export>Export query groups CSV</button>
+      </div>
+      <div class="provider-report-table-wrap">
+        <table class="provider-report-table query-group-report-table">
+          <thead>
+            <tr>
+              <th>Wave</th>
+              <th>Query group</th>
+              <th>Calls</th>
+              <th>Raw</th>
+              <th>Accepted</th>
+              <th>Final unique</th>
+              <th>Dedupe / cap</th>
+              <th>Provider lift</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${groups.map((group) => `
+              <tr>
+                <td>${escapeHtml(group.adaptive_wave_label || `Wave ${group.adaptive_wave || 1}`)}</td>
+                <td>
+                  <strong>${escapeHtml(group.query_group_label || group.skill_input || group.query_group_id)}</strong>
+                  <span class="query-group-sample">${escapeHtml(group.sample_query || "")}</span>
+                </td>
+                <td>${escapeHtml(toReportNumber(group.executed_calls).toLocaleString())}/${escapeHtml(toReportNumber(group.planned_calls).toLocaleString())}</td>
+                <td>${escapeHtml(toReportNumber(group.raw_rows).toLocaleString())}</td>
+                <td>${escapeHtml(toReportNumber(group.accepted_rows).toLocaleString())}</td>
+                <td><span class="provider-lift">${escapeHtml(toReportNumber(group.final_candidates).toLocaleString())}</span></td>
+                <td>${escapeHtml(toReportNumber(group.deduped_or_capped_out).toLocaleString())}</td>
+                <td>${escapeHtml(formatProviderBreakdown(group.final_provider_counts))}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  `;
+}
+
+function formatBenchmarkDuration(seconds) {
+  const value = Number(seconds) || 0;
+  if (value < 60) return `${Math.round(value)}s`;
+  const minutes = Math.floor(value / 60);
+  const remainingSeconds = Math.round(value % 60);
+  return `${minutes}m ${String(remainingSeconds).padStart(2, "0")}s`;
+}
+
+function formatBenchmarkProviders(providers) {
+  const rows = Array.isArray(providers) ? providers : [];
+  if (!rows.length) return "-";
+  return rows
+    .filter((provider) => toReportNumber(provider.final_candidates) > 0)
+    .sort((left, right) => toReportNumber(right.final_candidates) - toReportNumber(left.final_candidates))
+    .slice(0, 3)
+    .map((provider) => `${formatProviderLabel(provider.provider)} ${toReportNumber(provider.final_candidates).toLocaleString()}`)
+    .join(", ") || "-";
+}
+
+function formatBenchmarkQueryGroups(groups) {
+  const rows = Array.isArray(groups) ? groups : [];
+  if (!rows.length) return "-";
+  return rows
+    .filter((group) => toReportNumber(group.final_candidates) > 0)
+    .slice(0, 3)
+    .map((group) => `${group.label || "Query group"} ${toReportNumber(group.final_candidates).toLocaleString()}`)
+    .join("; ") || "-";
+}
+
+function benchmarkSummaryToCsv(runs) {
+  const headers = [
+    "Run ID",
+    "Created at",
+    "Role",
+    "Role family",
+    "Locations",
+    "Search depth",
+    "Candidates",
+    "Duration seconds",
+    "Executed calls",
+    "Planned calls",
+    "Completed waves",
+    "Dynamic action",
+    "Provider lift",
+    "Top query groups",
+  ];
+  const rows = (runs || []).map((run) => [
+    run.id,
+    run.created_at,
+    run.role,
+    run.role_family,
+    Array.isArray(run.locations) ? run.locations.join(" | ") : "",
+    run.search_depth,
+    run.candidate_count,
+    run.duration_seconds,
+    run.executed_query_count,
+    run.planned_query_count,
+    run.completed_wave_count,
+    run.dynamic_action,
+    formatBenchmarkProviders(run.provider_lift),
+    formatBenchmarkQueryGroups(run.top_query_groups),
+  ]);
+  return [
+    headers.map(csvCell).join(","),
+    ...rows.map((row) => row.map(csvCell).join(",")),
+  ].join("\n");
+}
+
+function downloadBenchmarkSummaryCsv(runs) {
+  const csv = benchmarkSummaryToCsv(runs);
+  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "benchmark-summary.csv";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function normalizeBenchmarkLocation(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function hasSharedBenchmarkLocation(left, right) {
+  const leftLocations = new Set((left?.locations || []).map(normalizeBenchmarkLocation).filter(Boolean));
+  if (!leftLocations.size) return false;
+  return (right?.locations || []).map(normalizeBenchmarkLocation).some((location) => leftLocations.has(location));
+}
+
+function filterBenchmarkRuns(runs, currentRun, filter) {
+  const benchmarkRuns = Array.isArray(runs) ? runs : [];
+  if (filter === "same-family") {
+    const family = String(currentRun?.role_family || "").trim().toLowerCase();
+    if (!family) return benchmarkRuns;
+    return benchmarkRuns.filter((run) => String(run.role_family || "").trim().toLowerCase() === family);
+  }
+  if (filter === "same-location") {
+    return benchmarkRuns.filter((run) => hasSharedBenchmarkLocation(currentRun, run));
+  }
+  if (filter === "max-200") {
+    return benchmarkRuns.filter((run) => String(run.search_depth || "").toLowerCase() === "max" && toReportNumber(run.candidate_count) >= 200);
+  }
+  return benchmarkRuns;
+}
+
+function benchmarkFilterLabel(filter) {
+  const labels = {
+    all: "All runs",
+    "same-family": "Same family",
+    "same-location": "Same location",
+    "max-200": "Max 200",
+  };
+  return labels[filter] || labels.all;
+}
+
+function renderBenchmarkFilterButton(filter, activeFilter, label, count) {
+  return `
+    <button type="button" class="benchmark-filter ${filter === activeFilter ? "is-active" : ""}" data-benchmark-filter="${escapeHtml(filter)}">
+      ${escapeHtml(label)}
+      <span>${escapeHtml(toReportNumber(count).toLocaleString())}</span>
+    </button>
+  `;
+}
+
+function renderBenchmarkSummaryContent(currentRun, runs, activeFilter = "all") {
+  const benchmarkRuns = Array.isArray(runs) ? runs : [];
+  if (!benchmarkRuns.length) {
+    return `<p class="provider-report-note">No benchmark runs saved yet.</p>`;
+  }
+  const filterCounts = {
+    all: benchmarkRuns.length,
+    "same-family": filterBenchmarkRuns(benchmarkRuns, currentRun, "same-family").length,
+    "same-location": filterBenchmarkRuns(benchmarkRuns, currentRun, "same-location").length,
+    "max-200": filterBenchmarkRuns(benchmarkRuns, currentRun, "max-200").length,
+  };
+  const filteredRuns = filterBenchmarkRuns(benchmarkRuns, currentRun, activeFilter);
+
+  return `
+    <div class="benchmark-summary-header">
+      <div>
+        <p>Compare recent runs by duration, executed calls, provider lift, and top query groups.</p>
+        <div class="benchmark-filters">
+          ${renderBenchmarkFilterButton("all", activeFilter, "All", filterCounts.all)}
+          ${renderBenchmarkFilterButton("same-family", activeFilter, "Same family", filterCounts["same-family"])}
+          ${renderBenchmarkFilterButton("same-location", activeFilter, "Same location", filterCounts["same-location"])}
+          ${renderBenchmarkFilterButton("max-200", activeFilter, "Max 200", filterCounts["max-200"])}
+        </div>
+      </div>
+      <button type="button" class="ghost-btn compact-btn" data-benchmark-export>Export ${escapeHtml(benchmarkFilterLabel(activeFilter))} CSV</button>
+    </div>
+    <div class="provider-report-table-wrap">
+      <table class="provider-report-table benchmark-summary-table">
+        <thead>
+          <tr>
+            <th>Run</th>
+            <th>Role</th>
+            <th>Results</th>
+            <th>Time</th>
+            <th>Calls</th>
+            <th>Provider lift</th>
+            <th>Top query groups</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filteredRuns.map((run) => `
+            <tr class="${run.id === currentRun?.id ? "is-current-run" : ""}">
+              <td>
+                <strong>${escapeHtml(run.id || "-")}</strong>
+                <span class="benchmark-subline">${escapeHtml(run.search_depth || "-")} - ${escapeHtml((run.locations || []).join(", ") || "-")}</span>
+              </td>
+              <td>
+                ${escapeHtml(run.role || "Untitled")}
+                <span class="benchmark-subline">${escapeHtml(run.role_family || "Custom role")}</span>
+              </td>
+              <td>${escapeHtml(toReportNumber(run.candidate_count).toLocaleString())}</td>
+              <td>${escapeHtml(formatBenchmarkDuration(run.duration_seconds))}</td>
+              <td>${escapeHtml(toReportNumber(run.executed_query_count).toLocaleString())}/${escapeHtml(toReportNumber(run.planned_query_count).toLocaleString())}</td>
+              <td>${escapeHtml(formatBenchmarkProviders(run.provider_lift))}</td>
+              <td>${escapeHtml(formatBenchmarkQueryGroups(run.top_query_groups))}</td>
+            </tr>
+          `).join("") || `
+            <tr>
+              <td colspan="7">No runs match this benchmark filter yet.</td>
+            </tr>
+          `}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function loadBenchmarkSummary(currentRun) {
+  const container = document.getElementById("benchmark-summary");
+  if (!container) return;
+  try {
+    const response = await fetch("/api/benchmarks?limit=8");
+    const payload = await readJsonResponse(response);
+    if (response.status === 401) {
+      redirectToLogin(payload);
+      return;
+    }
+    if (!response.ok) {
+      throw new Error(payload.error || "Benchmark summary failed");
+    }
+    const runs = Array.isArray(payload.runs) ? payload.runs : [];
+    let activeFilter = "all";
+    const render = () => {
+      const filteredRuns = filterBenchmarkRuns(runs, currentRun, activeFilter);
+      container.innerHTML = renderBenchmarkSummaryContent(currentRun, runs, activeFilter);
+      container.querySelectorAll("[data-benchmark-filter]").forEach((button) => {
+        button.addEventListener("click", () => {
+          activeFilter = button.dataset.benchmarkFilter || "all";
+          render();
+        });
+      });
+      container.querySelector("[data-benchmark-export]")?.addEventListener("click", () => {
+        downloadBenchmarkSummaryCsv(filteredRuns);
+      });
+    };
+    render();
+  } catch (error) {
+    container.innerHTML = `<p class="provider-report-note">${escapeHtml(error.message || "Benchmark summary unavailable.")}</p>`;
+  }
 }
 
 function csvCell(value) {
@@ -1152,6 +1627,7 @@ function renderSearchDiagnostics(run) {
   }
 
   const totals = report.totals || {};
+  const queryGroupReport = getQueryGroupContributionReport(run);
   container.classList.remove("hidden");
   container.innerHTML = `
     <div class="provider-report-card">
@@ -1203,18 +1679,28 @@ function renderSearchDiagnostics(run) {
         Unique lift is attributed to the provider whose row survived dedupe first. This is enough to compare provider value without exposing noisy raw diagnostics in the main table.
       </p>
       ${renderAdaptiveWaveReport(run?.search_strategy?.adaptive_waves)}
+      ${renderQueryGroupContributionReport(queryGroupReport)}
+      <details class="provider-report-waves benchmark-summary-report" open>
+        <summary>Benchmark summary</summary>
+        <div id="benchmark-summary">
+          <p class="provider-report-note">Loading recent run comparison...</p>
+        </div>
+      </details>
     </div>
   `;
   container.querySelector("[data-provider-report-export]")?.addEventListener("click", () => {
     downloadProviderReportCsv(report, run);
   });
+  container.querySelector("[data-query-group-report-export]")?.addEventListener("click", () => {
+    downloadQueryGroupReportCsv(queryGroupReport, run);
+  });
+  loadBenchmarkSummary(run);
 }
 
 function startSearchProgress(data) {
-  const sourceCount = Math.max(data.sources.length, 1);
   const providerCount = Math.max(data.providers?.length || 1, 1);
-  const expectedSteps = getExpectedQueryPasses(data.num);
-  const expectedDuration = Math.max(9000, 4500 + expectedSteps * 2800 + sourceCount * 1200 + providerCount * 1800);
+  const expectedDuration = estimateSearchDurationMs(data);
+  const estimateCopy = describeSearchEstimate(data, expectedDuration);
   const startedAt = Date.now();
   const minimumVisibleMs = 1600;
   const activeWaitMessages = [
@@ -1222,44 +1708,56 @@ function startSearchProgress(data) {
     "Search is still running. Keeping the page open is enough.",
     "Gathering and cleaning results before ranking the shortlist.",
     "Still alive. Larger query sets can take a little longer.",
-    "Almost there. We are waiting for the final search responses.",
+    "Still running. Large searches may need several minutes to fill the shortlist.",
+    "Working through the remaining planned searches and deduping candidates.",
   ];
 
   const phases = [
     { until: 15, title: "Validating search input", copy: "Checking fields, normalizing keywords, and preparing your request." },
     { until: 35, title: "Building query set", copy: `Preparing query passes across ${providerCount} search provider${providerCount > 1 ? "s" : ""}.` },
     { until: 72, title: "Searching public sources", copy: "Scanning public profiles, merging candidate lists, and removing duplicates." },
-    { until: 87, title: "Ranking candidates", copy: "Ranking the strongest matches and preparing the shortlist for review." },
+    { until: 88, title: "Ranking candidates", copy: "Ranking the strongest matches and preparing the shortlist for review." },
+    { until: 94, title: "Finishing large search", copy: "Waiting for the slowest search passes and preparing the final candidate list." },
   ];
 
-  paintProgress(4, phases[0].title, phases[0].copy);
+  paintProgress(
+    4,
+    phases[0].title,
+    `${phases[0].copy} ${estimateCopy}`,
+    formatProgressTiming(startedAt, expectedDuration)
+  );
 
   const timer = window.setInterval(() => {
     const elapsed = Date.now() - startedAt;
-    const ratio = Math.min(elapsed / expectedDuration, 1);
-    const percent = Math.min(87, 4 + ratio * 83);
+    const ratio = elapsed / expectedDuration;
+    const percent = ratio <= 1
+      ? Math.min(88, 4 + ratio * 84)
+      : Math.min(94, 88 + (ratio - 1) * 6);
     const phase = phases.find((item) => percent <= item.until) || phases[phases.length - 1];
     let copy = phase.copy;
     if (elapsed > 10000) {
-      const waitIndex = Math.floor((elapsed - 10000) / 4500) % activeWaitMessages.length;
+      const waitIndex = Math.floor((elapsed - 10000) / 15000) % activeWaitMessages.length;
       copy = activeWaitMessages[waitIndex];
     }
-    if (elapsed > 25000) {
-      copy = "This is a larger search, and it can take 30-60 seconds. The search is still running.";
+    if (elapsed > expectedDuration * 0.65) {
+      copy = `${estimateCopy} The search is still running normally.`;
     }
-    paintProgress(percent, phase.title, copy);
-  }, 220);
+    if (elapsed > expectedDuration) {
+      copy = "This run is taking longer than the estimate. It is still working while the server finishes the request.";
+    }
+    paintProgress(percent, phase.title, copy, formatProgressTiming(startedAt, expectedDuration));
+  }, 1000);
 
   return {
     finish(message = "Finalizing results") {
       window.clearInterval(timer);
-      paintProgress(100, message, "Search complete. Loading the final candidate list.");
+      paintProgress(100, message, "Search complete. Loading the final candidate list.", formatProgressTiming(startedAt, expectedDuration));
       const remaining = Math.max(700, minimumVisibleMs - (Date.now() - startedAt));
       window.setTimeout(() => hideProgressCard(), remaining);
     },
     fail(message = "Search stopped") {
       window.clearInterval(timer);
-      paintProgress(100, message, "The request was interrupted before results were returned.");
+      paintProgress(100, message, "The request was interrupted before results were returned.", formatProgressTiming(startedAt, expectedDuration));
       const remaining = Math.max(1200, minimumVisibleMs - (Date.now() - startedAt));
       window.setTimeout(() => hideProgressCard(), remaining);
     },

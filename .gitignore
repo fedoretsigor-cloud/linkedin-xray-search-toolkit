@@ -7,5 +7,6 @@ __pycache__/
 .vscode/
 output/
 data/
+logs/
 server.out.log
 server.err.log

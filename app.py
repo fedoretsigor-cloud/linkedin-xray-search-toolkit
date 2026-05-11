@@ -131,9 +131,89 @@ def index():
     return render_template("index.html")
 
 
+def benchmark_provider_lift(run):
+    report = run.get("provider_contribution_report") or run.get("search_strategy", {}).get("provider_contribution_report") or {}
+    providers = report.get("providers") if isinstance(report, dict) else []
+    return [
+        {
+            "provider": item.get("provider", ""),
+            "final_candidates": int(item.get("final_candidates", 0) or 0),
+            "accepted_rows": int(item.get("accepted_rows", 0) or 0),
+            "executed_calls": int(item.get("executed_calls", 0) or 0),
+        }
+        for item in providers or []
+        if int(item.get("final_candidates", 0) or 0) > 0
+    ]
+
+
+def benchmark_top_query_groups(run, limit=3):
+    report = run.get("query_group_contribution_report") or run.get("search_strategy", {}).get("query_group_contribution_report") or {}
+    groups = report.get("ranked_groups") if isinstance(report, dict) else []
+    if not groups:
+        groups = report.get("groups", []) if isinstance(report, dict) else []
+    ranked = sorted(
+        [item for item in groups or [] if int(item.get("final_candidates", 0) or 0) > 0],
+        key=lambda item: int(item.get("final_candidates", 0) or 0),
+        reverse=True,
+    )
+    return [
+        {
+            "label": item.get("query_group_label") or item.get("skill_input") or item.get("query_group_id", ""),
+            "final_candidates": int(item.get("final_candidates", 0) or 0),
+            "executed_calls": int(item.get("executed_calls", 0) or 0),
+        }
+        for item in ranked[:limit]
+    ]
+
+
+def build_benchmark_summary(run):
+    search_strategy = run.get("search_strategy", {}) if isinstance(run.get("search_strategy"), dict) else {}
+    search = run.get("search", {}) if isinstance(run.get("search"), dict) else {}
+    adaptive_waves = search_strategy.get("adaptive_waves", {}) if isinstance(search_strategy.get("adaptive_waves"), dict) else {}
+    dynamic_selection = adaptive_waves.get("dynamic_selection", {}) if isinstance(adaptive_waves.get("dynamic_selection"), dict) else {}
+    return {
+        "id": run.get("id", ""),
+        "created_at": run.get("created_at", ""),
+        "project_id": run.get("project_id", ""),
+        "role": search.get("role") or search_strategy.get("primary_role") or "Untitled search",
+        "role_family": search_strategy.get("role_pattern_family", ""),
+        "locations": search_strategy.get("locations") or search.get("locations", []),
+        "search_depth": search_strategy.get("search_depth") or search.get("search_depth", ""),
+        "candidate_count": len(run.get("candidates", []) or []),
+        "duration_seconds": float(run.get("duration_seconds", 0) or 0),
+        "executed_query_count": int(search_strategy.get("executed_query_count") or run.get("queries_count", 0) or 0),
+        "planned_query_count": int(search_strategy.get("planned_query_count", 0) or 0),
+        "base_query_count": int(search_strategy.get("base_query_count", 0) or 0),
+        "completed_wave_count": int(adaptive_waves.get("completed_wave_count", 0) or 0),
+        "dynamic_action": dynamic_selection.get("action", ""),
+        "provider_lift": benchmark_provider_lift(run),
+        "top_query_groups": benchmark_top_query_groups(run),
+    }
+
+
 @app.get("/api/searches")
 def list_searches():
     return jsonify(load_run_index(RUNS_DIR, INDEX_FILE))
+
+
+@app.get("/api/benchmarks")
+def list_benchmarks():
+    try:
+        limit = min(max(int(request.args.get("limit", "10")), 1), 50)
+    except ValueError:
+        limit = 10
+    summaries = []
+    for item in load_run_index(RUNS_DIR, INDEX_FILE):
+        run_id = item.get("id")
+        if not run_id:
+            continue
+        run = load_run(RUNS_DIR, run_id)
+        if not run:
+            continue
+        summaries.append(build_benchmark_summary(run))
+        if len(summaries) >= limit:
+            break
+    return jsonify({"runs": summaries})
 
 
 @app.get("/api/projects")
