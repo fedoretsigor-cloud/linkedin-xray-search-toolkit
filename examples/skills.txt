@@ -1,4 +1,0 @@
-python | django | postgresql
-python | fastapi | aws
-java | javascript | oracle
-java | spring | oracle
