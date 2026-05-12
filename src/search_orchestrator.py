@@ -86,6 +86,7 @@ CREDIT_ERROR_MARKERS = (
 )
 RATE_LIMIT_MARKERS = ("rate limit", "too many requests", "throttle")
 AUTH_ERROR_MARKERS = ("invalid api key", "unauthorized", "forbidden", "missing api key")
+NETWORK_ERROR_MARKERS = ("network error", "timeout", "readtimeout", "connectionerror")
 
 
 def positive_int(value, default=0):
@@ -214,6 +215,8 @@ def classify_provider_error(status_code, message):
         return "auth"
     if normalized.startswith("missing "):
         return "configuration"
+    if any(marker in normalized for marker in NETWORK_ERROR_MARKERS):
+        return "network"
     return "api_error"
 
 
@@ -227,6 +230,8 @@ def build_provider_user_message(provider, kind, message):
         return f"{provider_label} rejected the API key or access. Check the provider key/settings."
     if kind == "configuration":
         return f"{provider_label} is not configured. Add the missing key in .env or choose another Search Depth."
+    if kind == "network":
+        return f"{provider_label} timed out or had a network issue. Retry the search; if it repeats, use Medium or Extended so other providers can continue."
     return f"{provider_label} returned an API error. Search continued with the remaining providers."
 
 
@@ -1674,7 +1679,7 @@ def run_search(
             error = describe_provider_error(provider, exc)
             if len(providers) == 1:
                 status = f" {error['status_code']}" if error.get("status_code") else ""
-                raise RuntimeError(f"{provider} API error{status}: {error['message']}") from exc
+                raise RuntimeError(f"{provider} API error{status}: {error['user_message']}") from exc
             if error not in provider_errors:
                 provider_errors.append(error)
             if error.get("kind") in {"credits", "rate_limit", "auth", "configuration"}:

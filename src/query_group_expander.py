@@ -3,18 +3,7 @@ from src.text_utils import clean_text
 
 FAMILY_DEFAULT_GROUPS = {
     "Java Backend": [
-        ["Java", "JVM"],
-        ["Spring Boot", "Spring"],
-        ["Kafka", "RabbitMQ", "message broker"],
-        ["AWS", "cloud"],
-        ["microservices", "distributed systems"],
-        ["PostgreSQL", "MySQL", "Oracle"],
-        ["REST", "API", "GraphQL"],
-        ["Docker", "Kubernetes"],
-        ["Hibernate", "JPA"],
-        ["CI/CD", "Jenkins", "GitLab"],
-        ["Redis", "Elasticsearch"],
-        ["SQL", "NoSQL"],
+        ["Java", "Spring"],
     ],
     "QA Automation": [
         ["Python", "pytest"],

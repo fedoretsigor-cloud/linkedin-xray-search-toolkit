@@ -368,18 +368,7 @@ const ROLE_PATTERN_FAMILIES = [
 
 const FAMILY_DEFAULT_QUERY_GROUPS = {
   "Java Backend": [
-    ["Java", "JVM"],
-    ["Spring Boot", "Spring"],
-    ["Kafka", "RabbitMQ", "message broker"],
-    ["AWS", "cloud"],
-    ["microservices", "distributed systems"],
-    ["PostgreSQL", "MySQL", "Oracle"],
-    ["REST", "API", "GraphQL"],
-    ["Docker", "Kubernetes"],
-    ["Hibernate", "JPA"],
-    ["CI/CD", "Jenkins", "GitLab"],
-    ["Redis", "Elasticsearch"],
-    ["SQL", "NoSQL"],
+    ["Java", "Spring"],
   ],
   "QA Automation": [
     ["Python", "pytest"],
@@ -618,7 +607,7 @@ function formatQueryWaveTypeLabel(value) {
 function getSearchDepthQueryWaveTypes(searchDepth, rolePattern) {
   if (rolePattern?.mode !== "semantic") return [];
   if (rolePattern?.queryStrategy === "grouped_anchors" && !(rolePattern?.evidenceQueryGroups || []).length) return [];
-  return searchDepth?.queryWaveTypes || SEARCH_DEPTHS.extended.queryWaveTypes;
+  return searchDepth?.queryWaveTypes || SEARCH_DEPTHS.standard.queryWaveTypes;
 }
 
 function formatSearchSourceLabel(value) {
@@ -647,7 +636,7 @@ function formatProviderErrorKind(kind) {
 }
 
 function getSearchDepthConfig(value) {
-  return SEARCH_DEPTHS[value] || SEARCH_DEPTHS.extended;
+  return SEARCH_DEPTHS[value] || SEARCH_DEPTHS.standard;
 }
 
 function getSelectedSearchDepth(form = document.getElementById("search-form")) {
@@ -685,14 +674,14 @@ function estimatePlannedSearchCalls(data) {
 
   const sourceCount = Math.max(data?.sources?.length || 1, 1);
   const providerCount = Math.max(data?.providers?.length || 1, 1);
-  const searchDepth = getSearchDepthConfig(data?.search_depth || "extended");
+  const searchDepth = getSearchDepthConfig(data?.search_depth || "standard");
   const providerPasses = countProviderPasses(data?.providers || searchDepth.providers, searchDepth);
   return desiredQueryGroupCount(data?.num) * Math.max(sourceCount, 1) * Math.max(providerPasses || providerCount, 1);
 }
 
 function estimateSearchDurationMs(data) {
   const limit = Number(data?.num) || 20;
-  const searchDepthKey = data?.search_depth || "extended";
+  const searchDepthKey = data?.search_depth || "standard";
   const searchDepth = getSearchDepthConfig(searchDepthKey);
   const plannedCalls = estimatePlannedSearchCalls(data);
   const providerCount = Math.max(data?.providers?.length || searchDepth.providers.length || 1, 1);
@@ -719,7 +708,7 @@ function estimateSearchDurationMs(data) {
 
 function describeSearchEstimate(data, estimatedDuration) {
   const limit = Number(data?.num) || 20;
-  const searchDepth = getSearchDepthConfig(data?.search_depth || "extended");
+  const searchDepth = getSearchDepthConfig(data?.search_depth || "standard");
   const providerCount = Math.max(data?.providers?.length || searchDepth.providers.length || 1, 1);
   if (limit >= 200 && data?.search_depth === "max") {
     return `Large search: estimated ${formatApproxDuration(estimatedDuration)} total for 200 candidates. Keep this tab open.`;
@@ -2636,7 +2625,7 @@ function buildConfirmedBriefFromForm() {
     locations: lines(form.locations.value),
     location_policy: "strict",
     sources: Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value),
-    search_depth: form.search_depth?.value || "extended",
+    search_depth: form.search_depth?.value || "standard",
     providers: searchDepth.providers,
     results_limit: Number(form.num.value),
   };
@@ -2979,7 +2968,7 @@ function buildStrategyPreviewFromForm() {
   const displayLocations = lines(form.locations.value).map((item) => shortenSearchPhrase(item, 60));
   const locations = buildLocationQueryValues(displayLocations);
   const sources = Array.from(form.querySelectorAll('input[name="sources"]:checked')).map((input) => input.value);
-  const searchDepthKey = form.search_depth?.value || "extended";
+  const searchDepthKey = form.search_depth?.value || "standard";
   const searchDepth = getSearchDepthConfig(searchDepthKey);
   const rolePattern = buildSemanticRolePattern(primaryRole, roleVariants, {
     searchIntent,
@@ -3124,7 +3113,7 @@ function renderSearchStrategyPreview() {
     <details class="brief-details" open>
       <summary>Search depth</summary>
       <ul>
-        <li>${escapeHtml(strategy.search_depth_label || "Extended")}: ${escapeHtml((strategy.providers || []).map(formatProviderLabel).join(" + ") || "No provider selected.")}</li>
+        <li>${escapeHtml(strategy.search_depth_label || "Standard")}: ${escapeHtml((strategy.providers || []).map(formatProviderLabel).join(" + ") || "No provider selected.")}</li>
         <li>Base queries: ${escapeHtml(strategy.base_query_count || strategy.query_count)}; provider/page passes: ${escapeHtml(strategy.provider_passes || strategy.query_count)}; planned calls: ${escapeHtml(strategy.query_count)}${strategy.call_cap_applied ? `; Max budget cap: ${escapeHtml(strategy.planned_call_cap)}.` : "."}</li>
         ${strategy.query_wave_labels?.length ? `<li>Wave plan: ${escapeHtml(strategy.query_wave_labels.join(" -> "))}.</li>` : ""}
         ${strategy.query_wave_types?.includes("evidence_expansion") ? `<li>Evidence Expansion is the final high-recall wave and runs only if earlier waves have not filled the selected Results Limit.</li>` : ""}
@@ -3152,7 +3141,8 @@ function buildSearchIntentFromBrief(brief) {
 }
 
 function buildSearchIntentFromForm(form) {
-  const formTerms = lines(form.tech_groups.value).flatMap((group) => group.split("|"));
+  const manualSkillGroups = parseTechGroupLines(form.tech_groups.value);
+  const formTerms = manualSkillGroups.flat();
   const briefTerms = state.requirementBrief
     ? collectSearchIntentTerms([
         ...(state.requirementBrief.search_keywords || []),
@@ -3168,7 +3158,20 @@ function buildSearchIntentFromForm(form) {
   return buildSearchIntentPayload({
     roleTitles: [form.role.value.trim(), ...state.roleVariants],
     terms,
+    manualSkillGroups,
   });
+}
+
+function parseTechGroupLines(value) {
+  return lines(value)
+    .flatMap((group) => chunkArray(
+      group
+        .split(/[|,;]+/)
+        .map((item) => shortenSearchPhrase(item, 45))
+        .filter(Boolean),
+      3,
+    ))
+    .filter((group) => group.length);
 }
 
 function collectSearchIntentTerms(values) {
@@ -3223,7 +3226,7 @@ function dedupeIntentTerms(terms) {
   });
 }
 
-function buildSearchIntentPayload({ roleTitles, terms }) {
+function buildSearchIntentPayload({ roleTitles, terms, manualSkillGroups = [] }) {
   const byKind = {
     language: terms.filter((term) => term.kind === "language").map((term) => term.label),
     domain: terms.filter((term) => term.kind === "domain").map((term) => term.label),
@@ -3231,15 +3234,16 @@ function buildSearchIntentPayload({ roleTitles, terms }) {
     methodology: terms.filter((term) => term.kind === "methodology").map((term) => term.label),
     other: terms.filter((term) => term.kind === "other").map((term) => term.label),
   };
-  const skillGroups = [
+  const semanticSkillGroups = [
     ...chunkArray(dedupeTextValues(byKind.language).slice(0, 3), 3),
     ...chunkArray(dedupeTextValues(byKind.domain).slice(0, 4), 3),
     ...chunkArray(dedupeTextValues([...byKind.tooling, ...byKind.methodology]).slice(0, 6), 3),
   ].filter((group) => group.length);
 
-  if (!skillGroups.length && byKind.other.length) {
-    skillGroups.push(dedupeTextValues(byKind.other).slice(0, 3));
+  if (!semanticSkillGroups.length && byKind.other.length) {
+    semanticSkillGroups.push(dedupeTextValues(byKind.other).slice(0, 3));
   }
+  const skillGroups = manualSkillGroups.length ? manualSkillGroups : semanticSkillGroups;
 
   return {
     role_titles: dedupeTextValues(roleTitles).slice(0, 5),
@@ -3530,7 +3534,7 @@ async function handleSearch(event) {
     tech_groups: lines(form.tech_groups.value),
     locations: lines(form.locations.value),
     location_policy: "strict",
-    search_depth: form.search_depth?.value || "extended",
+    search_depth: form.search_depth?.value || "standard",
     providers: getSelectedSearchDepth(form).providers,
     experience: form.experience.value,
     availability: form.availability.value,

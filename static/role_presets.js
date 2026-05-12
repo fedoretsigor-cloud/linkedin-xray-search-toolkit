@@ -6,7 +6,7 @@ window.ROLE_PRESETS = [
         name: "Java Backend Developer",
         role: "Java Backend Developer",
         variants: ["Java Developer", "Backend Engineer", "Java Software Engineer", "Spring Boot Developer"],
-        stacks: ["Java | Spring Boot | Kafka | AWS", "Java | Spring | Oracle"],
+        stacks: ["Java | Spring"],
       },
       {
         name: "Python Backend Developer",

@@ -24,6 +24,7 @@ SEARCH_DEPTH_QUERY_WAVE_TYPES = {
     "extended": ["evidence_core", "title_focus"],
     "max": ["evidence_core", "title_focus", "evidence_expansion"],
 }
+TECH_GROUP_CHUNK_SIZE = 3
 
 
 def contains_cyrillic(values):
@@ -133,10 +134,9 @@ def build_web_search_request(payload, default_results):
     search_intent = sanitize_search_intent(
         confirmed_brief.get("search_intent") or (build_search_intent(confirmed_brief) if confirmed_brief else {})
     )
-    skill_groups = search_intent.get("skill_groups") or [
-        [part.strip() for part in group.split("|") if part.strip()]
-        for group in search["tech_groups"]
-    ] or [[]]
+    # Manual Tech Stacks are the user's explicit query contract. Keep their
+    # line/grouping shape instead of re-bucketing terms by semantic kind.
+    skill_groups = parse_tech_groups(search["tech_groups"]) or search_intent.get("skill_groups") or [[]]
     role_pattern = build_role_pattern(
         search["role"],
         search["titles"][1:],
@@ -174,6 +174,23 @@ def build_web_search_request(payload, default_results):
     search["stack_summary"] = ", ".join(search["tech_groups"])
     search["provider_summary"] = ", ".join(search["providers"])
     return search, search_input
+
+
+def parse_tech_groups(values):
+    groups = []
+    seen = set()
+    for value in values or []:
+        parts = [clean_text(part) for part in re.split(r"[|,;]+", clean_text(value)) if clean_text(part)]
+        if not parts:
+            continue
+        for index in range(0, len(parts), TECH_GROUP_CHUNK_SIZE):
+            group = parts[index : index + TECH_GROUP_CHUNK_SIZE]
+            key = "|".join(part.lower() for part in group)
+            if key in seen:
+                continue
+            seen.add(key)
+            groups.append(group)
+    return groups
 
 
 def transform_candidates(rows, search):

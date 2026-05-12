@@ -862,15 +862,15 @@ h1, h2, h3, h4, p { margin-top: 0; }
 }
 .query-group-sample {
   display: block;
-  max-width: 520px;
   margin-top: 4px;
   color: var(--muted);
   font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
   font-size: 10px;
   line-height: 1.35;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .dynamic-wave-selection {
   margin-top: 12px;
