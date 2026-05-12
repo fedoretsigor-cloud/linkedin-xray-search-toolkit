@@ -668,6 +668,38 @@ Next recommended product step:
 - Benchmark dynamic reranking and conservative replacement after the evidence-first wave split lands.
 - Test the next provider shortlist with the same X-Ray query set and compare raw LinkedIn URLs, strict-location survivors, deduped candidates, cost, and pagination behavior.
 
+## Credits optimization
+
+Context:
+
+- The first hard Houston Front Office / ETRM validation run returned 186 / 200 candidates, but used 480 primary provider calls.
+- SerpApi-backed providers accounted for 310 of those calls: 155 Bing / SerpApi and 155 Google / SerpApi.
+- This proved the evidence-first search can recover far more candidates than the old baseline, but the credit cost is too high for routine use.
+
+Recommended order:
+
+1. Staged pagination.
+   Start with shallow pages for every provider/query group, then continue deeper only for groups that produce unique lift. Do not give every provider 10 pages by default.
+
+2. Provider ladder instead of fully parallel Max.
+   Start with Tavily, Serper, and one SerpApi provider. Add the second SerpApi provider only if the candidate target is not being filled.
+
+3. Bing / SerpApi vs Google / SerpApi overlap check.
+   Measure whether Bing / SerpApi and Google / SerpApi return mostly different candidates. If overlap is high, run one first and use the other as fallback.
+
+4. Query-group depth control.
+   Continue deep pagination only for query groups with strong accepted rows and unique candidates. Stop or deprioritize groups that show weak lift after the first pages.
+
+5. Per-provider efficiency score.
+   Track unique candidates per executed call by provider and query group, then spend the next budget slice on the provider/group pairs with the best lift.
+
+Expected result:
+
+- Keep high-recall Max behavior available.
+- Reduce SerpApi spend on successful searches.
+- Preserve the ability to reach 100/200 candidates when the role is hard.
+- Make cost decisions visible in Search Explanation and Technical reports.
+
 ## Next Implementation Plan: Evidence-first Search Waves
 
 Estimated time for first useful implementation: 2-4 hours.
