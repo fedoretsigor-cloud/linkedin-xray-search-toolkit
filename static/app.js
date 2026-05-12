@@ -2073,16 +2073,27 @@ function startSearchProgress(data) {
     { until: 88, title: "Ranking candidates", copy: "Ranking the strongest matches and preparing the shortlist for review." },
     { until: 94, title: "Finishing large search", copy: "Waiting for the slowest search passes and preparing the final candidate list." },
   ];
+  let latestJobProgress = null;
 
-  paintProgress(
-    4,
-    phases[0].title,
-    `${phases[0].copy} ${estimateCopy}`,
-    formatProgressTiming(startedAt, expectedDuration)
-  );
-
-  const timer = window.setInterval(() => {
+  const renderProgressTick = () => {
     const elapsed = Date.now() - startedAt;
+    if (latestJobProgress?.total) {
+      const current = toReportNumber(latestJobProgress.current);
+      const total = Math.max(toReportNumber(latestJobProgress.total), 1);
+      const percent = Math.min(96, Math.max(6, (current / total) * 96));
+      const wave = latestJobProgress.wave_type_label || latestJobProgress.adaptive_wave_label || "Search";
+      const provider = latestJobProgress.provider ? ` via ${formatProviderLabel(latestJobProgress.provider)}` : "";
+      const group = latestJobProgress.query_group_label ? ` Current group: ${latestJobProgress.query_group_label}.` : "";
+      const candidates = toReportNumber(latestJobProgress.candidates_seen);
+      paintProgress(
+        percent,
+        `${wave}${provider}`,
+        `Search is running in the background.${group} Candidates seen so far: ${candidates.toLocaleString()}.`,
+        `Elapsed ${formatTimerDuration(elapsed)} - provider calls ${current.toLocaleString()}/${total.toLocaleString()}`
+      );
+      return;
+    }
+
     const ratio = elapsed / expectedDuration;
     const percent = ratio <= 1
       ? Math.min(88, 4 + ratio * 84)
@@ -2100,9 +2111,22 @@ function startSearchProgress(data) {
       copy = "This run is taking longer than the estimate. It is still working while the server finishes the request.";
     }
     paintProgress(percent, phase.title, copy, formatProgressTiming(startedAt, expectedDuration));
-  }, 1000);
+  };
+
+  paintProgress(
+    4,
+    phases[0].title,
+    `${phases[0].copy} ${estimateCopy}`,
+    formatProgressTiming(startedAt, expectedDuration)
+  );
+
+  const timer = window.setInterval(renderProgressTick, 1000);
 
   return {
+    update(job) {
+      latestJobProgress = job?.progress || latestJobProgress;
+      renderProgressTick();
+    },
     finish(message = "Finalizing results") {
       window.clearInterval(timer);
       paintProgress(100, message, "Search complete. Loading the final candidate list.", formatProgressTiming(startedAt, expectedDuration));
@@ -3451,6 +3475,48 @@ async function loadHistory() {
   renderHistory(items);
 }
 
+function sleep(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+async function pollSearchJob(jobId, progress) {
+  let transientFailures = 0;
+  while (true) {
+    await sleep(3500);
+    let response;
+    let payload;
+    try {
+      response = await fetch(`/api/search-jobs/${encodeURIComponent(jobId)}`);
+      payload = await readJsonResponse(response);
+    } catch (error) {
+      transientFailures += 1;
+      if (transientFailures <= 3) continue;
+      throw error;
+    }
+    transientFailures = 0;
+
+    if (response.status === 401) {
+      progress.fail("Authentication required");
+      redirectToLogin(payload);
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(payload.error || "Search job failed");
+    }
+
+    progress.update?.(payload);
+    if (payload.status === "succeeded") {
+      if (!payload.run) {
+        throw new Error("Search finished but the saved run was not found.");
+      }
+      return payload.run;
+    }
+    if (payload.status === "failed") {
+      throw new Error(payload.error || "Search failed");
+    }
+  }
+}
+
 async function handleSearch(event) {
   event.preventDefault();
   const form = event.currentTarget;
@@ -3492,7 +3558,7 @@ async function handleSearch(event) {
   const progress = startSearchProgress(data);
 
   try {
-    const response = await fetch("/api/search", {
+    const response = await fetch("/api/search-jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -3507,8 +3573,11 @@ async function handleSearch(event) {
       throw new Error(payload.error || "Search failed");
     }
 
+    progress.update?.(payload);
+    const run = await pollSearchJob(payload.id, progress);
+    if (!run) return;
     progress.finish();
-    renderResults(payload);
+    renderResults(run);
     await loadHistory();
   } catch (error) {
     progress.fail("Search failed");

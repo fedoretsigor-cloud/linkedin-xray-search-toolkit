@@ -203,6 +203,7 @@ Current implementation:
 - Provider diagnostics are stored in `search_strategy.result_diagnostics` for analysis, including raw rows, quality rows, accepted rows, strict-location rejects, verification attempts, and provider breakdowns.
 - Detailed diagnostics are hidden from the main results UI by default so the recruiter sees a cleaner candidate table, while the run JSON remains auditable.
 - Added recruiter-friendly Search Explanation UX after each run. It summarizes what was searched, candidate fill, elapsed time, executed vs planned provider calls, strict-location filtering, top contributing providers, top query groups, and adaptive-wave behavior.
+- Long-running searches now start as background jobs and the UI polls for status, so browser/network fetch timeouts no longer lose completed saved runs.
 - Technical provider/query-group/adaptive/benchmark reports remain available, but are collapsed behind `Technical reports` so the main UI reads like a sourcing summary rather than a debug dashboard.
 - A compact Provider Contribution Report is now shown after each search and can be exported to CSV. It summarizes raw rows, strict-location rejects, accepted rows, final unique candidates, dedupe/cap loss, executed calls, and warnings per provider.
 - Adaptive wave diagnostics are stored in `search_strategy.adaptive_waves` and shown inside the contribution report, including which waves ran, calls per wave, raw rows, accepted rows, and unique candidates after each wave.
@@ -639,6 +640,7 @@ Completed:
 - Evidence-first local verification completed: Python compile checks and frontend syntax checks pass after the wave model, generic evidence builder, Max call-cap, and report updates.
 - Captured first large-search timing benchmark: Data Analyst, Poland, Max depth, 200 candidates completed in 996.55 seconds, about 16 minutes 37 seconds, with 203 executed provider queries out of 372 planned.
 - Search progress now shows elapsed time, approximate remaining time, and a more realistic large-search estimate instead of sitting silently at 87%.
+- Search execution now uses async background jobs with polling from the frontend, preventing long Max searches from showing `Failed to fetch` while the backend continues and saves the run.
 - Captured second large-search benchmark: QA Automation Engineer, Poland, Max depth, 200 candidates completed in 438.27 seconds, about 7 minutes 18 seconds, with 90 executed provider queries out of 372 planned.
 - Query Group Contribution Report now hides unexecuted zero-row groups from UI/CSV exports, keeping benchmark reports focused on groups that actually ran or produced lift.
 - Benchmark Summary now compares recent runs in the UI and CSV by duration, executed/planned calls, provider lift, and top query groups.
@@ -660,13 +662,68 @@ In progress:
 
 Next recommended product step:
 
-- Run side-by-side benchmarks for Standard, Medium, Extended, and Max on the same requirement. Use the Provider Contribution Report, saved diagnostics, and executed-query audits to compare actual provider contribution, not just planned query counts.
-- Run the first real evidence-first validation search on May 13, 2026: use a known hard role/location case, preferably Houston Front Office / ETRM, at Max depth with 200 target candidates.
-- Generalize evidence-first query generation across all Role Groups, while keeping Energy / ETRM as the first specialized evidence pattern. Add specialized patterns family-by-family as owner-provided recruiting/domain knowledge arrives.
-- Benchmark Max early-stop behavior against selected target and planned call cap so high-recall searches remain credit-safe.
-- After the validation run, inspect Technical reports for provider lift, query-group lift, strict-location rejects, stop reason, and whether Evidence Expansion ran or was skipped.
-- Benchmark dynamic reranking and conservative replacement after the evidence-first wave split lands.
-- Test the next provider shortlist with the same X-Ray query set and compare raw LinkedIn URLs, strict-location survivors, deduped candidates, cost, and pagination behavior.
+- Implement Broad Search + Internal Filtering/Scoring v1 before doing the full Credit Optimization slice. The QA Automation regression showed that overly narrow evidence queries can burn credits and still miss target.
+- Add a minimal early waste guardrail with Broad Discovery v1 so Max stops provider/query-group/location pairs that produce raw rows but no accepted or unique candidates after early pages.
+- Re-test QA Automation / Ukraine and Power BA / Houston after Broad Discovery v1, then compare candidate count, duration, provider lift, query-group lift, strict-location rejects, and top-candidate quality.
+- After broad-first behavior is stable, implement the larger Credit Optimization plan: staged pagination, provider ladder, provider demotion, strict-location waste diagnostics, and lift-per-call budget allocation.
+- Then return to Wave 2 Optimization - LinkedIn Mimic, using the saved Power BA LinkedIn calibration dataset as an internal tuning reference.
+- Continue provider shortlist evaluation only after the core query strategy and waste guardrails are stable.
+
+## TODO: Broad Search + Internal Filtering/Scoring
+
+Status: TODO.
+
+Why this moved ahead of full Credit Optimization:
+
+- The QA Hybrid Test Engineer / Remote Ukraine Max run proved that evidence-first can become too narrow and too expensive when each must-have skill becomes a hard query filter.
+- That run spent 480 provider calls over 34 minutes and returned only 32 candidates.
+- A later broader QA Automation / Ukraine run reached 100 candidates in 87 calls because Evidence Core stayed broader and hit the target before Title Focus or Evidence Expansion ran.
+- Therefore, optimizing credits first would risk making the wrong search strategy cheaper instead of making the search strategy better.
+
+Goal:
+
+- Treat search providers as candidate discovery engines.
+- Treat the app's scoring/ranking layer as the precision engine.
+- Search broadly enough to see candidates before strict must-have scoring decides whether they are strong, possible, or weak fits.
+
+Decision:
+
+- Do not turn every must-have skill into a separate hard search query.
+- Keep role + location as the main discovery spine.
+- Use only the strongest tool/domain anchors in search when they materially improve discovery.
+- Move more must-have details into internal scoring signals and visible evidence/risk explanations.
+
+Recommended wave model:
+
+1. Broad Role Discovery.
+   Search role-family titles plus strict location with minimal extra filters. Example for QA: `("QA Engineer" OR "Automation QA" OR "SDET" OR "Test Automation Engineer") "Ukraine"`.
+
+2. Common Tool Probe.
+   Add common, visible tools that usually appear in public snippets. Example for QA: `("QA Engineer" OR "Automation QA" OR "SDET") ("Python" OR "Selenium" OR "Playwright" OR "pytest") "Ukraine"`.
+
+3. Optional Domain Probe.
+   Run shallow domain-specific searches only when the domain is truly important. Example for automotive QA: `("QA Engineer" OR "Automation QA" OR "SDET") ("automotive" OR "embedded" OR "ADAS" OR "CAN") "Ukraine"`. This must not be the core search path.
+
+Scoring changes:
+
+- Strong scores should require role evidence plus location evidence plus at least one meaningful tool/domain signal.
+- Missing must-have evidence should reduce score or add a risk, but should not always prevent discovery.
+- Domain-only evidence such as `automotive`, `embedded`, `ADAS`, or `CAN` should boost candidates when present, not eliminate all candidates when absent from snippets.
+- Top candidates should be separated into `strong`, `possible`, and `weak/backup` rather than pretending every discovered profile is equally good.
+
+Implementation notes:
+
+- Start with QA Automation and Energy / ETRM as calibration cases.
+- Use the saved `docs/calibration/power_ba_linkedin_2026-05-12` dataset to manually compare LinkedIn-like overlap for Power BA.
+- Compare against recent saved runs: QA bad run `c53e6228da`, QA better runs `0fed83ffb3` and `d5fe5d1e22`, and Power BA run `30b87d9e92`.
+- Keep the UI explanation simple: "We searched broadly first, then ranked candidates by stronger evidence."
+
+Acceptance criteria:
+
+- QA Automation / Ukraine should not require hundreds of calls to return a small candidate list.
+- Max should reach useful candidates earlier, or stop with a clear reason when the market appears too small.
+- Candidate quality should improve because scoring, not query over-filtering, becomes the main precision layer.
+- Total calls should drop naturally because broad/core queries replace many narrow skill-specific queries.
 
 ## Credits optimization
 
@@ -675,23 +732,55 @@ Context:
 - The first hard Houston Front Office / ETRM validation run returned 186 / 200 candidates, but used 480 primary provider calls.
 - SerpApi-backed providers accounted for 310 of those calls: 155 Bing / SerpApi and 155 Google / SerpApi.
 - This proved the evidence-first search can recover far more candidates than the old baseline, but the credit cost is too high for routine use.
+- Both SerpApi-backed providers produced useful final candidates in the validation run, so credit optimization must not simply disable one provider up front.
+- The later QA Hybrid Test Engineer / Remote Ukraine Max run returned only 32 / 200 candidates after 480 provider calls and 34 minutes. Bing / SerpApi spent 150 calls for 0 final candidates, Google / SerpApi spent 152 calls for 2 final candidates, and Serper spent 160 calls for 4 final candidates. Tavily produced most of the useful results with 18 calls and 26 final candidates.
+- That QA run showed the largest waste pattern: providers can return many raw rows, but strict location can reject almost all of them. Max must stop spending on provider/query-group pairs that show early zero accepted lift.
+
+Safety principle:
+
+- Optimize by adaptive lift per call, not by blunt provider removal.
+- Run this after Broad Search + Internal Filtering/Scoring v1, so optimization reduces waste around the right search strategy.
+- Keep high-recall Max available for hard roles.
+- Do not reduce quality just to reduce calls.
+- Treat fewer calls as a win only when candidate quality, target fill, and LinkedIn-like overlap do not regress materially.
+- Stop waste early when a provider/query-group/location combination returns raw rows but no accepted or unique candidates after the early pages.
 
 Recommended order:
 
 1. Staged pagination.
    Start with shallow pages for every provider/query group, then continue deeper only for groups that produce unique lift. Do not give every provider 10 pages by default.
 
-2. Provider ladder instead of fully parallel Max.
-   Start with Tavily, Serper, and one SerpApi provider. Add the second SerpApi provider only if the candidate target is not being filled.
+2. Early waste stop for provider/query-group pairs.
+   After the first early pages, stop deeper pagination for a provider/query-group/location combination when it has 0 accepted rows or 0 unique lift. This would have stopped the QA run from spending 150 Bing / SerpApi calls that produced 0 final candidates.
 
-3. Bing / SerpApi vs Google / SerpApi overlap check.
+3. Provider ladder instead of fully parallel Max.
+   Start with Tavily, Serper, and one SerpApi provider. Add the second SerpApi provider only when the target is not being filled, the first SerpApi provider shows weak unique lift, or historical/provider-group data says the second provider is strong for that query group.
+
+4. Provider-level demotion inside a run.
+   If a provider has near-zero accepted/final lift across multiple early query groups, pause or demote that provider for the remaining waves in the same run unless the target is far below goal and no better provider/group alternatives remain.
+
+5. Bing / SerpApi vs Google / SerpApi overlap check.
    Measure whether Bing / SerpApi and Google / SerpApi return mostly different candidates. If overlap is high, run one first and use the other as fallback.
 
-4. Query-group depth control.
+6. Query-group depth control.
    Continue deep pagination only for query groups with strong accepted rows and unique candidates. Stop or deprioritize groups that show weak lift after the first pages.
 
-5. Per-provider efficiency score.
+7. Strict-location waste diagnostics.
+   Track strict-location reject rate by provider/query group early in the run. If a provider returns mostly off-location rows for a strict-location search, reduce its remaining pages before it consumes the Max budget.
+
+8. Per-provider efficiency score.
    Track unique candidates per executed call by provider and query group, then spend the next budget slice on the provider/group pairs with the best lift.
+
+9. Quality guardrails.
+   Compare before/after runs by candidate target fill, top-candidate quality, provider lift, query-group lift, and manual LinkedIn calibration overlap when a benchmark list is available.
+
+Implementation notes:
+
+- Do not change Standard and Medium first; they are already cheaper and useful for quick searches.
+- Apply credit optimization primarily to Extended and Max, where provider pagination and SerpApi spend can explode.
+- Keep the existing planned call cap as a hard safety net.
+- Show cost-saving decisions in Search Explanation and Technical reports so the user understands why some providers/pages did or did not run.
+- For Max runs, show when a provider/query group is stopped because early pages produced raw rows but no accepted candidates.
 
 Expected result:
 
@@ -699,6 +788,7 @@ Expected result:
 - Reduce SerpApi spend on successful searches.
 - Preserve the ability to reach 100/200 candidates when the role is hard.
 - Make cost decisions visible in Search Explanation and Technical reports.
+- Prevent repeats of the QA Automation failure mode where hundreds of provider calls run despite near-zero strict-location accepted lift.
 
 ## Next Implementation Plan: Evidence-first Search Waves
 
@@ -747,3 +837,81 @@ First-version acceptance criteria:
 - Max reports target/call-cap/exhausted-plan stop behavior.
 - Existing Java/QA/Data family searches still generate valid query plans and do not break.
 - Java/QA/Data/Product/etc. Role Groups use the general evidence-first pattern, while specialized family patterns can override/enrich the generic groups when we have better domain knowledge.
+
+## TODO: Wave 2 Optimization - LinkedIn Mimic
+
+Status: TODO.
+
+Goal:
+
+- Improve Wave 2 without breaking the title-led search logic that already produced useful LinkedIn overlap.
+- Keep Wave 2 as the second wave and keep it focused on titles, but make the title layer behave more like LinkedIn Recruiter expansion.
+- Optimize for better LinkedIn-like candidate quality and overlap, not just larger candidate volume.
+
+Decision:
+
+- Do not add a fourth wave.
+- Do not replace Wave 2 wholesale.
+- Refactor Wave 2 internally into protected title-led lanes.
+
+Wave 2 lanes:
+
+1. Direct Title.
+   Searches direct roles such as `Business Analyst`, `BA`, `Business Systems Analyst`, and `Technical Business Analyst`.
+
+2. Tool / Domain Title.
+   Searches title plus strong tool/domain evidence, for example `Business Analyst + Endur`, `BA + ETRM`, or `Functional Analyst + OpenLink`.
+
+3. LinkedIn-like Adjacent Title.
+   Searches adjacent titles that LinkedIn often treats as relevant when strong evidence is present, for example `Consultant`, `SME`, `Architect`, `Application Support`, `Implementation`, `Manager`, and `Lead` combined with `ETRM`, `Endur`, `OpenLink`, or `CTRM`.
+
+Example LinkedIn-like adjacent query for Power BA / ETRM:
+
+```text
+("Consultant" OR "SME" OR "Architect" OR "Application Support" OR "Implementation")
+("ETRM" OR "Endur" OR "OpenLink" OR "CTRM")
+"Houston"
+```
+
+Protected Wave 2 groups:
+
+- Keep and carefully tune Wave 2 groups that already produced LinkedIn-list overlap.
+- Initial protected groups from the Houston Power BA calibration run:
+- `Title Focus: ETRM + Endur`
+- `Title Focus: Power Trading + Endur`
+- `Title Focus: ETRM`
+- `Title Focus: grouped anchors`
+
+Replaceable Wave 2 groups:
+
+- Replace only weak generic title groups that produce low unique lift.
+- Replace groups that repeat another group's intent.
+- Replace groups that do not show strong tool/domain evidence.
+- Replace groups that produce volume but weak candidate quality.
+
+General semantic-family model:
+
+- Add `adjacent_titles` as a first-class role-family field alongside `core_terms`, `role_terms`, `domain_terms`, and `tool_terms`.
+- Use the same logic across role families, with family-specific title dictionaries.
+
+Initial examples:
+
+- Power BA / ETRM: direct titles `Business Analyst`, `BA`, `Functional Analyst`; adjacent titles `Consultant`, `SME`, `Architect`, `Application Support`, `Implementation Lead`.
+- QA Automation: direct titles `QA Engineer`, `Test Automation Engineer`; adjacent titles `SDET`, `Automation Tester`, `Test Lead`, `Quality Engineer`.
+- Backend: direct titles `Backend Developer`, `Java Developer`; adjacent titles `Software Engineer`, `Platform Engineer`, `API Engineer`, `Application Developer`.
+- Data / BI: direct titles `Data Analyst`, `BI Analyst`; adjacent titles `Analytics Engineer`, `Reporting Analyst`, `BI Developer`, `Data Consultant`.
+- UX / UI: direct titles `UX Designer`, `UI Designer`; adjacent titles `Product Designer`, `Design Systems Designer`, `UX Researcher`.
+
+Calibration approach:
+
+- Keep LinkedIn benchmark comparison as an internal/manual Codex calibration process for now, not a normal product UI feature.
+- When the owner provides a LinkedIn list or screenshots, compare overlap manually, inspect which query groups found matched names, and use that evidence to tune Wave 2.
+- Do not burden the main user interface with benchmark import/reporting until there is a recurring product need.
+
+Acceptance criteria:
+
+- Wave 2 still produces the previously useful direct/title/tool matches.
+- Strong existing Wave 2 groups are not removed.
+- Adjacent-title groups improve LinkedIn-like overlap on calibration searches.
+- Total call budget does not increase just because adjacent-title groups were added; weak groups should be replaced first.
+- Top candidates require stronger tool/domain evidence before receiving high scores.

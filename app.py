@@ -1,6 +1,10 @@
 ﻿import json
 import os
+import time
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock, Thread
 
 from dotenv import load_dotenv
 
@@ -48,6 +52,9 @@ app.config["PERMANENT_SESSION_LIFETIME"] = int(os.getenv("SESSION_LIFETIME_SECON
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
 EXEMPT_ENDPOINTS = {"login", "login_submit", "static"}
+SEARCH_JOBS = {}
+SEARCH_JOBS_LOCK = Lock()
+MAX_SEARCH_JOBS = 25
 
 
 def auth_enabled():
@@ -199,6 +206,105 @@ def build_benchmark_summary(run):
     }
 
 
+def utc_now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def prune_search_jobs_locked():
+    if len(SEARCH_JOBS) <= MAX_SEARCH_JOBS:
+        return
+    ordered = sorted(SEARCH_JOBS.values(), key=lambda item: item.get("created_at", ""))
+    for job in ordered[: max(len(SEARCH_JOBS) - MAX_SEARCH_JOBS, 0)]:
+        SEARCH_JOBS.pop(job["id"], None)
+
+
+def update_search_job(job_id, **updates):
+    with SEARCH_JOBS_LOCK:
+        job = SEARCH_JOBS.get(job_id)
+        if not job:
+            return
+        job.update(updates)
+        job["updated_at"] = utc_now_iso()
+
+
+def public_search_job(job):
+    return {
+        key: value
+        for key, value in job.items()
+        if key != "thread"
+    }
+
+
+def progress_payload(current, total, query_info, started_at, row_count):
+    query_info = query_info or {}
+    total = int(total or 0)
+    current = int(current or 0)
+    return {
+        "current": current,
+        "total": total,
+        "percent": round((current / total) * 100, 1) if total else 0,
+        "provider": query_info.get("provider", ""),
+        "query_group_label": query_info.get("query_group_label") or query_info.get("skill_input") or "",
+        "wave_type": query_info.get("wave_type", ""),
+        "wave_type_label": query_info.get("wave_type_label", ""),
+        "adaptive_wave": query_info.get("adaptive_wave", ""),
+        "adaptive_wave_label": query_info.get("adaptive_wave_label", ""),
+        "candidates_seen": int(row_count or 0),
+        "elapsed_seconds": round(time.time() - started_at, 1),
+    }
+
+
+def execute_search_run(search, search_input, progress_callback=None):
+    result = run_search(search_input, progress_callback=progress_callback)
+    run_record = build_run_record(search, result)
+    project = create_or_update_project(PROJECTS_DIR, PROJECT_INDEX_FILE, run_record)
+    run_record["project_id"] = project["id"]
+    save_run(RUNS_DIR, INDEX_FILE, run_record)
+    return run_record
+
+
+def run_search_job(job_id, search, search_input):
+    update_search_job(job_id, status="running", started_at=utc_now_iso())
+    try:
+        def progress_callback(current, total, query_info, started_at, row_count):
+            update_search_job(
+                job_id,
+                progress=progress_payload(current, total, query_info, started_at, row_count),
+            )
+
+        run_record = execute_search_run(search, search_input, progress_callback=progress_callback)
+        with SEARCH_JOBS_LOCK:
+            latest_progress = dict(SEARCH_JOBS.get(job_id, {}).get("progress", {}))
+        update_search_job(
+            job_id,
+            status="succeeded",
+            finished_at=utc_now_iso(),
+            run_id=run_record["id"],
+            progress={
+                **latest_progress,
+                "current": int(run_record.get("search_strategy", {}).get("executed_search_query_count") or run_record.get("queries_count") or 0),
+                "candidates_seen": len(run_record.get("candidates", []) or []),
+                "percent": 100,
+            },
+        )
+    except RuntimeError as exc:
+        update_search_job(
+            job_id,
+            status="failed",
+            finished_at=utc_now_iso(),
+            error=str(exc),
+            error_status=400,
+        )
+    except Exception as exc:
+        update_search_job(
+            job_id,
+            status="failed",
+            finished_at=utc_now_iso(),
+            error=f"Search failed: {exc}",
+            error_status=500,
+        )
+
+
 @app.get("/api/searches")
 def list_searches():
     return jsonify(load_run_index(RUNS_DIR, INDEX_FILE))
@@ -250,17 +356,63 @@ def create_search():
     payload = request.get_json(force=True)
     try:
         search, search_input = build_web_search_request(payload, DEFAULT_SEARCH_RESULTS)
-        result = run_search(search_input)
-        run_record = build_run_record(search, result)
-        project = create_or_update_project(PROJECTS_DIR, PROJECT_INDEX_FILE, run_record)
-        run_record["project_id"] = project["id"]
-        save_run(RUNS_DIR, INDEX_FILE, run_record)
+        run_record = execute_search_run(search, search_input)
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": f"Search failed: {exc}"}), 500
 
     return jsonify(run_record)
+
+
+@app.post("/api/search-jobs")
+def create_search_job():
+    payload = request.get_json(force=True)
+    try:
+        search, search_input = build_web_search_request(payload, DEFAULT_SEARCH_RESULTS)
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Search failed: {exc}"}), 500
+
+    job_id = uuid.uuid4().hex[:10]
+    job = {
+        "id": job_id,
+        "status": "queued",
+        "created_at": utc_now_iso(),
+        "updated_at": utc_now_iso(),
+        "progress": {
+            "current": 0,
+            "total": 0,
+            "percent": 0,
+            "candidates_seen": 0,
+        },
+    }
+    with SEARCH_JOBS_LOCK:
+        SEARCH_JOBS[job_id] = job
+        prune_search_jobs_locked()
+
+    thread = Thread(target=run_search_job, args=(job_id, search, search_input), daemon=True)
+    with SEARCH_JOBS_LOCK:
+        if job_id in SEARCH_JOBS:
+            SEARCH_JOBS[job_id]["thread"] = thread
+    thread.start()
+    return jsonify(public_search_job(job)), 202
+
+
+@app.get("/api/search-jobs/<job_id>")
+def get_search_job(job_id):
+    with SEARCH_JOBS_LOCK:
+        job = SEARCH_JOBS.get(job_id)
+        if not job:
+            return jsonify({"error": "Search job not found"}), 404
+        payload = public_search_job(dict(job))
+
+    if payload.get("status") == "succeeded" and payload.get("run_id"):
+        run = load_run(RUNS_DIR, payload["run_id"])
+        if run:
+            payload["run"] = hydrate_run_candidate_evidence(run)
+    return jsonify(payload)
 
 
 @app.post("/api/requirements/analyze")
